@@ -93,8 +93,9 @@
       { name: 'Hailuo 2.3', meta: '1080P · 6–10s', icon: '◉' },
     ],
   };
-  const state = { items: [], newestFirst: true, visibleCount: 6, filteredCount: 0, lazyLoading: false, lazyScrollTimer: 0, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
-  const draftKey = 'tishici-draft-v2';
+  const state = { items: [], workspaceMode: 'prompt', modeSwitching: false, newestFirst: true, visibleCount: 6, filteredCount: 0, lazyLoading: false, lazyScrollTimer: 0, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
+  const draftKeyFor = (mode) => `tishici-draft-v3-${mode}`;
+  const draftIdFor = (mode) => `active-${mode}`;
   const LAZY_BATCH_SIZE = 6;
   const MAX_IMAGE_BYTES = 1024 * 1024;
   const MAX_VIDEO_BYTES = 1024 * 1024;
@@ -191,6 +192,14 @@
     picker.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
   };
   const renderMediaInput = () => {
+    if (state.workspaceMode === 'note') {
+      media.accept = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v';
+      $('#mediaLabel').textContent = '图片或视频';
+      $('#mediaHint').textContent = '可选 · 超过 1MB 浏览器本地压缩';
+      $('#dropTitle').textContent = '拖入一张图片或一段视频';
+      $('#dropHint').textContent = '素材会和这条随手记放在一起';
+      return;
+    }
     const videoMode = state.type === 'video';
     media.accept = videoMode ? 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v' : 'image/jpeg,image/png,image/webp';
     $('#mediaLabel').textContent = videoMode ? '参考图片或视频' : '参考图片';
@@ -215,28 +224,119 @@
     }).join('');
     renderMediaInput();
   };
-  const saveDraft = () => {
-    localStorage.setItem(draftKey, JSON.stringify({ title: title.value, prompt: prompt.value, type: state.type, selectedModels: state.selectedModels }));
-    clearTimeout(state.draftTimer);
-    state.draftTimer = setTimeout(async () => {
-      try {
-        const db = await draftDb;
-        const transaction = db.transaction('drafts', 'readwrite');
-        transaction.objectStore('drafts').put({ id: 'active', title: title.value, prompt: prompt.value, type: state.type, selectedModels: state.selectedModels, media: state.file || null, mediaKind: state.mediaKind || '', fileName: state.originalFileName || state.file?.name || '' });
-        $('#draftState').textContent = prompt.value || title.value || state.file ? '草稿已保存到本机' : '自动保存草稿';
-      } catch { $('#draftState').textContent = '草稿已保存到当前浏览器'; }
-    }, 350);
+  const WORKSPACE_COPY = {
+    prompt: {
+      title: '提示词工作台', tagline: '随手存，马上发。', eyebrow: "JACK'S CONTACT SHEET · PROMPT ARCHIVE",
+      count: '条备份', composerKicker: '01 / COMPOSE', composerTitle: '新建备份',
+      titleLabel: '给它一个名字', titlePlaceholder: '例如：雨夜城市肖像',
+      promptLabel: '提示词', promptPlaceholder: '把提示词粘贴在这里……\n\n你可以保留换行、参数和备注，它们都会原样保存。',
+      privacy: '只存到你的备份库', auth: '发布身份', feedKicker: '02 / YOUR ARCHIVE', feedTitle: '已发布',
+      search: '搜索备份', emptyCopy: '写下第一条提示词，它会马上出现在这里。', emptyCta: '开始写第一条 ↗',
+    },
+    note: {
+      title: '随手记工作台', tagline: '想到什么，就记什么。', eyebrow: "JACK'S POCKET NOTE · QUICK CAPTURE",
+      count: '条随手记', composerKicker: '01 / JOT DOWN', composerTitle: '记一笔',
+      titleLabel: '这件事叫什么', titlePlaceholder: '例如：明天要补拍的镜头',
+      promptLabel: '随手记', promptPlaceholder: '想到什么，就记在这里……\n\n可以是一句话、一个待办，也可以附上一张图片或一段视频。',
+      privacy: '只存到你的随手记', auth: '保存身份', feedKicker: '02 / YOUR NOTES', feedTitle: '记下的东西',
+      search: '搜索随手记', emptyCopy: '写下第一条随手记，它会马上出现在这里。', emptyCta: '记下第一件事 ↗',
+    },
   };
-  const clearDraft = async () => {
+  const renderWorkspaceMode = () => {
+    const copy = WORKSPACE_COPY[state.workspaceMode];
+    document.body.dataset.workspace = state.workspaceMode;
+    document.title = state.workspaceMode === 'note' ? '随手记 · tishici' : '提示词备份库 · tishici';
+    document.querySelectorAll('.workspace-switch-button').forEach((button) => {
+      const active = button.dataset.workspace === state.workspaceMode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    $('#promptSettings').hidden = state.workspaceMode === 'note';
+    $('#heroEyebrow').textContent = copy.eyebrow;
+    $('#heroTitle').textContent = copy.title;
+    $('#heroTagline').textContent = copy.tagline;
+    $('#countLabel').textContent = copy.count;
+    $('#composerKicker').textContent = copy.composerKicker;
+    $('#composerTitle').textContent = copy.composerTitle;
+    $('#titleLabel').textContent = copy.titleLabel;
+    title.placeholder = copy.titlePlaceholder;
+    $('#promptLabel').textContent = copy.promptLabel;
+    prompt.placeholder = copy.promptPlaceholder;
+    $('#composerPrivacy').textContent = copy.privacy;
+    $('#authLabel').textContent = copy.auth;
+    $('#feedKicker').textContent = copy.feedKicker;
+    $('#feedTitle').textContent = copy.feedTitle;
+    $('#search').placeholder = copy.search;
+    $('#emptyCopy').textContent = copy.emptyCopy;
+    $('#emptyCta').textContent = copy.emptyCta;
+    renderMediaInput();
+    syncPublishButton();
+  };
+  const snapshotDraft = () => ({
+    title: title.value,
+    prompt: prompt.value,
+    type: state.type,
+    selectedModels: { ...state.selectedModels },
+    media: state.file || null,
+    mediaKind: state.mediaKind || '',
+    fileName: state.originalFileName || state.file?.name || '',
+  });
+  const saveDraftTextFallback = (mode, draft) => {
+    try {
+      localStorage.setItem(draftKeyFor(mode), JSON.stringify({ title: draft.title, prompt: draft.prompt, type: draft.type, selectedModels: draft.selectedModels }));
+    } catch {}
+  };
+  const persistDraft = async (mode, draft) => {
+    saveDraftTextFallback(mode, draft);
+    try {
+      const db = await draftDb;
+      const transaction = db.transaction('drafts', 'readwrite');
+      transaction.objectStore('drafts').put({ id: draftIdFor(mode), ...draft });
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+      if (state.workspaceMode === mode) $('#draftState').textContent = draft.prompt || draft.title || draft.media ? '草稿已保存到本机' : '自动保存草稿';
+    } catch {
+      if (state.workspaceMode === mode) $('#draftState').textContent = '草稿已保存到当前浏览器';
+    }
+  };
+  const saveDraft = () => {
+    const mode = state.workspaceMode;
+    const draft = snapshotDraft();
+    saveDraftTextFallback(mode, draft);
     clearTimeout(state.draftTimer);
-    localStorage.removeItem(draftKey);
-    try { const db = await draftDb; db.transaction('drafts', 'readwrite').objectStore('drafts').delete('active'); } catch {}
+    state.draftTimer = setTimeout(() => persistDraft(mode, draft), 350);
+  };
+  const clearDraft = async (mode = state.workspaceMode) => {
+    clearTimeout(state.draftTimer);
+    state.draftTimer = null;
+    try {
+      localStorage.removeItem(draftKeyFor(mode));
+      if (mode === 'prompt') localStorage.removeItem('tishici-draft-v2');
+    } catch {}
+    try {
+      const db = await draftDb;
+      const transaction = db.transaction('drafts', 'readwrite');
+      const store = transaction.objectStore('drafts');
+      store.delete(draftIdFor(mode));
+      if (mode === 'prompt') store.delete('active');
+      await new Promise((resolve) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = resolve;
+        transaction.onabort = resolve;
+      });
+    } catch {}
   };
   const updateCount = () => { $('#charCount').textContent = `${prompt.value.length.toLocaleString()} / 12,000`; };
   const syncPublishButton = () => {
     const button = $('#publishButton');
     button.disabled = state.isProcessing || state.isPublishing;
-    button.querySelector('span').textContent = state.isProcessing ? '素材处理中…' : state.isPublishing ? '正在保存…' : '发布备份';
+    button.querySelector('span').textContent = state.isProcessing ? '素材处理中…' : state.isPublishing ? '正在保存…' : state.workspaceMode === 'note' ? '记下来' : '发布备份';
+    document.querySelectorAll('.workspace-switch-button').forEach((workspaceButton) => {
+      workspaceButton.disabled = state.modeSwitching || state.isProcessing || state.isPublishing;
+    });
   };
   const showProcessing = (file, kind, progress, heading, detail, status = 'working') => {
     const wasHidden = processingCard.hidden;
@@ -276,10 +376,29 @@
     fileSize.textContent = `${formatBytes(file.size)}${note ? `（${note}）` : ''}`;
     mediaPreview.hidden = false; dropzone.hidden = true; setNote(note ? `${note} · 草稿会自动保存在本机。` : `${isVideo ? '视频' : '图片'}草稿已恢复。`);
   };
-  const restoreDraft = async () => {
+  const restoreDraft = async (mode = state.workspaceMode) => {
     let draft = null;
-    try { const db = await draftDb; draft = await new Promise((resolve) => { const request = db.transaction('drafts').objectStore('drafts').get('active'); request.onsuccess = () => resolve(request.result || null); request.onerror = () => resolve(null); }); } catch {}
-    if (!draft) { try { draft = JSON.parse(localStorage.getItem(draftKey) || '{}'); } catch { draft = {}; } }
+    try {
+      const db = await draftDb;
+      draft = await new Promise((resolve) => {
+        const store = db.transaction('drafts').objectStore('drafts');
+        const request = store.get(draftIdFor(mode));
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => resolve(null);
+      });
+      if (!draft && mode === 'prompt') {
+        draft = await new Promise((resolve) => {
+          const request = db.transaction('drafts').objectStore('drafts').get('active');
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => resolve(null);
+        });
+      }
+    } catch {}
+    if (!draft) {
+      try {
+        draft = JSON.parse(localStorage.getItem(draftKeyFor(mode)) || (mode === 'prompt' ? localStorage.getItem('tishici-draft-v2') : '') || '{}');
+      } catch { draft = {}; }
+    }
     if (draft?.type && MODELS[draft.type]) state.type = draft.type;
     if (draft?.selectedModels) {
       for (const type of ['image', 'video']) {
@@ -297,6 +416,7 @@
       showPreview(file, draft.fileName || file.name, kind === 'video' ? '草稿视频' : '草稿图片', kind);
     }
     if (title.value || prompt.value || state.file) $('#draftState').textContent = '已恢复本机草稿';
+    else $('#draftState').textContent = '自动保存草稿';
   };
   const blobFromCanvas = (canvas, type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
   const compressImage = async (file, onProgress = () => {}) => {
@@ -575,9 +695,9 @@
     if (!file) return;
     const fileKind = detectMediaKind(file);
     const isVideo = fileKind === 'video';
-    const valid = fileKind && (state.type === 'video' || fileKind === 'image');
+    const valid = fileKind && (state.workspaceMode === 'note' || state.type === 'video' || fileKind === 'image');
     if (!valid) {
-      const message = state.type === 'video' ? '请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。';
+      const message = state.workspaceMode === 'note' || state.type === 'video' ? '请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。';
       setNote(message, true);
       showToast('没有识别到可用的图片或视频');
       return;
@@ -645,7 +765,7 @@
   const importDroppedFile = async (file) => {
     if (!file) return;
     const detectedType = detectMediaKind(file);
-    if (detectedType === 'video' && state.type !== 'video') {
+    if (state.workspaceMode === 'prompt' && detectedType === 'video' && state.type !== 'video') {
       if (state.file) clearFile();
       state.type = 'video';
       setModelMenu(false);
@@ -655,26 +775,37 @@
     await setFile(file);
   };
   const setNote = (message, error = false) => { const note = $('#formNote'); note.textContent = message; note.classList.toggle('error', error); };
+  const getItemWorkspace = (item) => item.collection === 'note' ? 'note' : 'prompt';
+  const getWorkspaceItems = () => state.items.filter((item) => getItemWorkspace(item) === state.workspaceMode);
   const getFilteredItems = () => {
     const query = $('#search').value.trim().toLowerCase();
-    const items = state.items.filter((item) => !query || `${item.title} ${item.prompt} ${item.type || ''} ${item.model || ''}`.toLowerCase().includes(query));
+    const items = getWorkspaceItems().filter((item) => !query || `${item.title} ${item.prompt} ${item.type || ''} ${item.model || ''}`.toLowerCase().includes(query));
     items.sort((a, b) => state.newestFirst ? new Date(b.createdAt) - new Date(a.createdAt) : new Date(a.createdAt) - new Date(b.createdAt));
     return items;
   };
-  const renderCard = (item, index) => `<article class="prompt-card" style="animation-delay:${Math.min((index % LAZY_BATCH_SIZE) * 45, 220)}ms">
-    <div class="prompt-badges"><span>${item.type === 'video' ? '视频' : '图片'}</span>${item.model ? `<b>${escapeHtml(item.model)}</b>` : ''}</div>
-    <div class="prompt-card-head"><h3 class="prompt-card-title ${item.title ? '' : 'untitled'}">${escapeHtml(item.title || '未命名提示词')}</h3><time class="prompt-date">${formatDate(item.createdAt)}</time></div>
-    <p class="prompt-text">${escapeHtml(item.prompt)}</p>
-    ${(() => { const mediaUrl = item.mediaUrl || item.imageUrl || item.videoUrl; if (!mediaUrl) return ''; const mediaType = item.mediaType || (item.videoUrl ? 'video' : 'image'); const mediaTitle = item.title || (mediaType === 'video' ? '视频预览' : '图片预览'); return `<button class="prompt-media-button" type="button" data-media-url="${escapeHtml(mediaUrl)}" data-media-type="${escapeHtml(mediaType)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开${mediaType === 'video' ? '视频' : '图片'}：${escapeHtml(mediaTitle)}">${mediaType === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl)}"></video><span class="media-open-mark is-play">▶</span>` : `<img class="prompt-image" loading="lazy" decoding="async" src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(mediaTitle)}"><span class="media-open-mark">↗</span>`}</button>`; })()}
-    <div class="prompt-card-foot"><span class="prompt-id">${escapeHtml(String(item.author || 'jack').toLowerCase())} · ${escapeHtml(item.id)}</span><div class="card-actions"><button class="card-action copy-action" data-id="${escapeHtml(item.id)}" type="button">复制文字</button><button class="card-action delete-action" data-id="${escapeHtml(item.id)}" type="button">删除</button></div></div>
-  </article>`;
+  const renderCard = (item, index) => {
+    const isNote = getItemWorkspace(item) === 'note';
+    const mediaUrl = item.mediaUrl || item.imageUrl || item.videoUrl;
+    const mediaType = item.mediaType || (item.videoUrl ? 'video' : mediaUrl ? 'image' : '');
+    const mediaTitle = item.title || (mediaType === 'video' ? '视频预览' : isNote ? '随手记图片' : '图片预览');
+    const badge = isNote ? '随手记' : item.type === 'video' ? '视频' : '图片';
+    const detailBadge = isNote ? (mediaType === 'video' ? '视频' : mediaType === 'image' ? '图片' : '文字') : item.model;
+    const mediaMarkup = !mediaUrl ? '' : `<button class="prompt-media-button" type="button" data-media-url="${escapeHtml(mediaUrl)}" data-media-type="${escapeHtml(mediaType)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开${mediaType === 'video' ? '视频' : '图片'}：${escapeHtml(mediaTitle)}">${mediaType === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl)}"></video><span class="media-open-mark is-play">▶</span>` : `<img class="prompt-image" loading="lazy" decoding="async" src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(mediaTitle)}"><span class="media-open-mark">↗</span>`}</button>`;
+    return `<article class="prompt-card ${isNote ? 'is-note' : ''}" style="animation-delay:${Math.min((index % LAZY_BATCH_SIZE) * 45, 220)}ms">
+      <div class="prompt-badges"><span>${badge}</span>${detailBadge ? `<b>${escapeHtml(detailBadge)}</b>` : ''}</div>
+      <div class="prompt-card-head"><h3 class="prompt-card-title ${item.title ? '' : 'untitled'}">${escapeHtml(item.title || (isNote ? '没写标题' : '未命名提示词'))}</h3><time class="prompt-date">${formatDate(item.createdAt)}</time></div>
+      <p class="prompt-text">${escapeHtml(item.prompt)}</p>
+      ${mediaMarkup}
+      <div class="prompt-card-foot"><span class="prompt-id">${escapeHtml(String(item.author || 'jack').toLowerCase())} · ${escapeHtml(item.id)}</span><div class="card-actions"><button class="card-action copy-action" data-id="${escapeHtml(item.id)}" type="button">复制文字</button><button class="card-action delete-action" data-id="${escapeHtml(item.id)}" type="button">删除</button></div></div>
+    </article>`;
+  };
   const renderLazySentinel = () => state.visibleCount < state.filteredCount
     ? `<div class="lazy-sentinel" id="lazySentinel" role="status"><span>⌄</span><p>继续向下 · 自动载入更多</p><small>${state.visibleCount} / ${state.filteredCount}</small></div>`
     : '';
   const normalizeRenderedVideos = (scope = feed) => scope.querySelectorAll('.prompt-video').forEach(normalizeVideoDuration);
   const render = () => {
     const items = getFilteredItems();
-    $('#count').textContent = state.items.length;
+    $('#count').textContent = getWorkspaceItems().length;
     state.filteredCount = items.length;
     if (!items.length) { feed.innerHTML = ''; empty.hidden = false; return; }
     state.visibleCount = Math.min(items.length, Math.max(LAZY_BATCH_SIZE, state.visibleCount));
@@ -709,18 +840,43 @@
     state.lazyLoading = false;
     render();
   };
+  const switchWorkspaceMode = async (nextMode) => {
+    if (!WORKSPACE_COPY[nextMode] || nextMode === state.workspaceMode || state.modeSwitching || state.isProcessing || state.isPublishing) return;
+    state.modeSwitching = true;
+    syncPublishButton();
+    clearTimeout(state.draftTimer);
+    await persistDraft(state.workspaceMode, snapshotDraft());
+    clearFile();
+    form.reset();
+    title.value = '';
+    prompt.value = '';
+    state.workspaceMode = nextMode;
+    setModelMenu(false);
+    $('#search').value = '';
+    state.newestFirst = true;
+    $('#sortButton').firstChild.textContent = '最新 ';
+    setNote('');
+    renderWorkspaceMode();
+    renderModelPicker();
+    updateCount();
+    await restoreDraft(nextMode);
+    resetLazyFeed();
+    renderPasswordGate();
+    state.modeSwitching = false;
+    syncPublishButton();
+  };
   const load = async () => {
     try { const response = await fetch('api.php?action=list', { cache: 'no-store' }); const data = await response.json(); if (!response.ok) throw new Error(data.error); state.items = data.items || []; state.canPublish = Boolean(data.canPublish); state.visibleCount = LAZY_BATCH_SIZE; renderPasswordGate(); render(); } catch (error) { feed.innerHTML = `<div class="loading-state"><p>暂时取不回备份，请刷新再试。</p></div>`; setNote(error.message, true); }
   };
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (state.isProcessing) return setNote('素材仍在浏览器本地压缩，请等进度完成后再发布。', true);
-    if (!prompt.value.trim()) return setNote('先写下一段提示词，再发布。', true);
+    if (state.isProcessing) return setNote(`素材仍在浏览器本地压缩，请等进度完成后再${state.workspaceMode === 'note' ? '保存' : '发布'}。`, true);
+    if (!prompt.value.trim()) return setNote(state.workspaceMode === 'note' ? '先写下一点内容，再记下来。' : '先写下一段提示词，再发布。', true);
     state.isPublishing = true; syncPublishButton(); setNote('');
-    const body = new FormData(); body.append('title', title.value.trim()); body.append('prompt', prompt.value.trim()); body.append('type', state.type); body.append('model', state.selectedModels[state.type]); body.append('password', $('#publishPassword').value); if (state.file) body.append('media', state.file, state.file.name);
+    const body = new FormData(); body.append('collection', state.workspaceMode); body.append('title', title.value.trim()); body.append('prompt', prompt.value.trim()); body.append('type', state.workspaceMode === 'note' ? (state.mediaKind || 'text') : state.type); body.append('model', state.workspaceMode === 'note' ? '' : state.selectedModels[state.type]); body.append('password', $('#publishPassword').value); if (state.file) body.append('media', state.file, state.file.name);
     try {
       const response = await fetch('api.php?action=create', { method: 'POST', body }); const data = await response.json(); if (!response.ok) throw new Error(data.error || '保存失败');
-      state.canPublish = true; state.items.unshift(data.item); state.visibleCount = LAZY_BATCH_SIZE; form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderPasswordGate(); render(); showToast('已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      state.canPublish = true; state.items.unshift(data.item); state.visibleCount = LAZY_BATCH_SIZE; form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderWorkspaceMode(); renderPasswordGate(); render(); showToast(state.workspaceMode === 'note' ? '记好了，就在右边' : '已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) { setNote(error.message === 'publish_password_required' ? '请输入正确的发布密码。' : error.message === 'publish_password_not_configured' ? '服务器尚未配置发布密码，请先完成运行环境设置。' : error.message === 'upload_too_large' ? '素材压缩后仍超过 1MB，请换一份更短或更小的素材。' : error.message === 'upload_failed' ? '素材上传失败，请换一份再试。' : '保存失败，请稍后再试。', true); }
     finally { state.isPublishing = false; syncPublishButton(); }
   });
@@ -801,7 +957,12 @@
   });
   document.addEventListener('dragend', resetGlobalDrop);
   window.addEventListener('blur', resetGlobalDrop);
+  $('#workspaceSwitch').addEventListener('click', (event) => {
+    const button = event.target.closest('.workspace-switch-button');
+    if (button) switchWorkspaceMode(button.dataset.workspace);
+  });
   $('#typeTabs').addEventListener('click', (event) => {
+    if (state.workspaceMode !== 'prompt') return;
     const tab = event.target.closest('.type-tab'); if (!tab || !MODELS[tab.dataset.type]) return;
     if (state.file && state.mediaKind === 'video' && tab.dataset.type === 'image') clearFile();
     state.type = tab.dataset.type; setModelMenu(false); renderModelPicker(); saveDraft();
@@ -828,8 +989,9 @@
     const mediaButton = event.target.closest('.prompt-media-button');
     if (mediaButton) { openMedia(mediaButton); return; }
     const button = event.target.closest('.card-action'); if (!button) return; const item = state.items.find((entry) => entry.id === button.dataset.id); if (!item) return;
-    if (button.classList.contains('copy-action')) { await navigator.clipboard.writeText(item.prompt); showToast('提示词已复制'); return; }
-    if (!window.confirm('确定删除这条备份吗？')) return;
+    const itemIsNote = getItemWorkspace(item) === 'note';
+    if (button.classList.contains('copy-action')) { await navigator.clipboard.writeText(item.prompt); showToast(itemIsNote ? '随手记已复制' : '提示词已复制'); return; }
+    if (!window.confirm(itemIsNote ? '确定删除这条随手记吗？' : '确定删除这条备份吗？')) return;
     const response = await fetch('api.php?action=delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: item.id, password: $('#publishPassword').value }) });
     if (response.ok) { state.canPublish = true; state.items = state.items.filter((entry) => entry.id !== item.id); renderPasswordGate(); render(); showToast('已删除'); } else if (response.status === 401) setNote('请输入正确的发布密码后再删除。', true); else if (response.status === 503) setNote('服务器尚未配置发布密码，请先完成运行环境设置。', true); else showToast('删除失败，请再试一次');
   });
@@ -837,5 +999,5 @@
   $('#mediaModal').addEventListener('pointerdown', (event) => { if (event.target === event.currentTarget) closeMedia(); });
   $('#themeToggle').addEventListener('click', () => { document.documentElement.classList.toggle('dark'); localStorage.setItem('tishici-theme-v2', document.documentElement.classList.contains('dark') ? 'dark' : 'light'); });
   if (localStorage.getItem('tishici-theme-v2') !== 'light') document.documentElement.classList.add('dark');
-  renderPasswordGate(); renderModelPicker(); restoreDraft().then(load);
+  renderWorkspaceMode(); renderPasswordGate(); renderModelPicker(); restoreDraft(state.workspaceMode).then(load);
 })();

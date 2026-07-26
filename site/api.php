@@ -96,23 +96,31 @@ if ($action === 'list') {
 }
 if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     require_publish_access((string)($_POST['password'] ?? ''));
+    $collection = (string)($_POST['collection'] ?? '') === 'note' ? 'note' : 'prompt';
     $prompt = clean_text((string)($_POST['prompt'] ?? ''), 12000);
-    if ($prompt === '') respond(['error' => 'prompt_required'], 422);
+    if ($prompt === '') respond(['error' => $collection === 'note' ? 'note_required' : 'prompt_required'], 422);
     $models = [
         'image' => ['G Image 2', '香蕉2', '香蕉Pro', 'Seedream 5.0 Pro', 'Seedream 4.5'],
         'video' => ['Seedance 2.0', 'Seedance 2.0 Fast', 'Seedance 2.0 Mini', 'Hailuo 2.3 Fast', 'Hailuo 2.3'],
     ];
-    $type = isset($models[(string)($_POST['type'] ?? '')]) ? (string)$_POST['type'] : 'image';
-    $model = clean_text((string)($_POST['model'] ?? ''), 80);
-    if (!in_array($model, $models[$type], true)) $model = $type === 'video' ? 'Seedance 2.0 Mini' : '香蕉Pro';
+    $media = media_upload();
+    if ($collection === 'note') {
+        $type = (string)($media['kind'] ?? 'text');
+        $model = '';
+    } else {
+        $type = isset($models[(string)($_POST['type'] ?? '')]) ? (string)$_POST['type'] : 'image';
+        $model = clean_text((string)($_POST['model'] ?? ''), 80);
+        if (!in_array($model, $models[$type], true)) $model = $type === 'video' ? 'Seedance 2.0 Mini' : '香蕉Pro';
+    }
     $item = [
-        'id' => 'p_' . date('ymdHis') . '_' . bin2hex(random_bytes(3)),
+        'id' => ($collection === 'note' ? 'n_' : 'p_') . date('ymdHis') . '_' . bin2hex(random_bytes(3)),
         'author' => 'jack',
+        'collection' => $collection,
         'type' => $type,
         'model' => $model,
         'title' => clean_text((string)($_POST['title'] ?? ''), 100),
         'prompt' => $prompt,
-        'media' => media_upload(),
+        'media' => $media,
         'createdAt' => date(DATE_ATOM),
     ];
     $item['mediaUrl'] = $item['media']['url'] ?? null;

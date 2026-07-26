@@ -2,6 +2,17 @@
 
 All notable changes to tishici are documented here.
 
+## Unreleased
+
+### Added
+
+- A separate Pocket Notes workspace with its own composer, feed, local draft, and image/video attachments.
+- A top-level workspace switch that always defaults to prompts when the site opens.
+
+### Changed
+
+- Prompt and note feeds render six items initially and lazy-load later batches while scrolling instead of using pagination.
+
 ## [0.1.0] - 2026-07-27
 
 ### Added

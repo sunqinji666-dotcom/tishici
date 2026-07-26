@@ -7,11 +7,11 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>提示词备份库 · tishici</title>
+  <title>提示词与随手记 · tishici</title>
   <script>try{if(localStorage.getItem('tishici-theme-v2')!=='light')document.documentElement.classList.add('dark')}catch(e){document.documentElement.classList.add('dark')}</script>
   <script>try{if(matchMedia('(hover:hover) and (pointer:fine)').matches&&!matchMedia('(prefers-reduced-motion:reduce)').matches)document.documentElement.classList.add('custom-pointer-ready')}catch(e){}</script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ff6542'/%3E%3Cpath d='M19 19h26v7H27v7h15v7H27v5h18v7H19z' fill='white'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=20260727-13">
+  <link rel="stylesheet" href="styles.css?v=20260727-14">
 </head>
 <body>
   <div class="particle-field" id="particleField" aria-hidden="true"></div>
@@ -21,6 +21,10 @@
       <span class="brand-mark">t</span>
       <span class="brand-copy"><strong>提示词备份库</strong><small>jack / prompt archive</small></span>
     </a>
+    <nav class="workspace-switch" id="workspaceSwitch" aria-label="工作台">
+      <button class="workspace-switch-button active" type="button" data-workspace="prompt" aria-pressed="true"><span>✦</span>提示词</button>
+      <button class="workspace-switch-button" type="button" data-workspace="note" aria-pressed="false"><span>⌁</span>随手记</button>
+    </nav>
     <div class="topbar-actions">
       <span class="private-pill"><i></i> jack · 打开即用</span>
       <button class="icon-button" id="themeToggle" type="button" aria-label="切换明暗模式">☼</button>
@@ -30,40 +34,42 @@
   <main class="shell">
     <section class="hero">
       <div>
-        <p class="eyebrow">JACK'S CONTACT SHEET · PROMPT ARCHIVE</p>
-        <h1>提示词工作台 <em>随手存，马上发。</em></h1>
+        <p class="eyebrow" id="heroEyebrow">JACK'S CONTACT SHEET · PROMPT ARCHIVE</p>
+        <h1><span id="heroTitle">提示词工作台</span> <em id="heroTagline">随手存，马上发。</em></h1>
         <p class="hero-copy">像整理底片一样，保存每一次灵感。</p>
       </div>
-      <div class="hero-count"><span id="count">0</span><small>条备份</small></div>
+      <div class="hero-count"><span id="count">0</span><small id="countLabel">条备份</small></div>
     </section>
 
     <section class="workspace">
       <article class="composer-card">
         <div class="card-heading">
           <div>
-            <span class="section-kicker">01 / COMPOSE</span>
-            <h2>新建备份</h2>
+            <span class="section-kicker" id="composerKicker">01 / COMPOSE</span>
+            <h2 id="composerTitle">新建备份</h2>
           </div>
           <span class="draft-state" id="draftState">自动保存草稿</span>
         </div>
         <form id="promptForm">
           <div class="form-scroll">
-          <label class="field-label">提示词类型 <span>选择生成方向</span></label>
-          <div class="type-tabs" id="typeTabs" role="tablist" aria-label="提示词类型">
-            <button class="type-tab active" type="button" data-type="image" role="tab" aria-selected="true"><span>◫</span> 图片</button>
-            <button class="type-tab" type="button" data-type="video" role="tab" aria-selected="false"><span>▶</span> 视频</button>
-          </div>
-          <label class="field-label">常用模型 <span id="modelCount">5 个可选</span></label>
-          <div class="model-select-shell">
-            <button class="model-trigger" id="modelTrigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
-            <div class="model-picker" id="modelPicker" role="listbox" aria-label="常用模型" aria-hidden="true"></div>
+          <div class="prompt-settings" id="promptSettings">
+            <label class="field-label">提示词类型 <span>选择生成方向</span></label>
+            <div class="type-tabs" id="typeTabs" role="tablist" aria-label="提示词类型">
+              <button class="type-tab active" type="button" data-type="image" role="tab" aria-selected="true"><span>◫</span> 图片</button>
+              <button class="type-tab" type="button" data-type="video" role="tab" aria-selected="false"><span>▶</span> 视频</button>
+            </div>
+            <label class="field-label">常用模型 <span id="modelCount">5 个可选</span></label>
+            <div class="model-select-shell">
+              <button class="model-trigger" id="modelTrigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
+              <div class="model-picker" id="modelPicker" role="listbox" aria-label="常用模型" aria-hidden="true"></div>
+            </div>
           </div>
 
-          <label class="field-label" for="title">给它一个名字 <span>可选</span></label>
+          <label class="field-label" for="title"><span class="field-name" id="titleLabel">给它一个名字</span> <span id="titleHint">可选</span></label>
           <input id="title" name="title" maxlength="100" placeholder="例如：雨夜城市肖像" autocomplete="off">
-          <label class="field-label" for="prompt">提示词 <span>必填</span></label>
+          <label class="field-label" for="prompt"><span class="field-name" id="promptLabel">提示词</span> <span id="promptHint">必填</span></label>
           <textarea id="prompt" name="prompt" rows="9" maxlength="12000" placeholder="把提示词粘贴在这里……&#10;&#10;你可以保留换行、参数和备注，它们都会原样保存。" required></textarea>
-          <div class="composer-meta"><span id="charCount">0 / 12,000</span><span>只存到你的备份库</span></div>
+          <div class="composer-meta"><span id="charCount">0 / 12,000</span><span id="composerPrivacy">只存到你的备份库</span></div>
 
           <label class="field-label"><span id="mediaLabel">参考图片</span> <span id="mediaHint">可选 · 超过 1MB 自动压缩为 WebP</span></label>
           <label class="dropzone" id="dropzone" for="media">
@@ -93,7 +99,7 @@
             <button type="button" class="remove-image" id="removeMedia" aria-label="移除素材">×</button>
           </div>
 
-          <label class="field-label publish-password-label" for="publishPassword">发布身份 <span id="passwordHint">jack · 首次发布需密码</span></label>
+          <label class="field-label publish-password-label" for="publishPassword"><span class="field-name" id="authLabel">发布身份</span> <span id="passwordHint">jack · 首次发布需密码</span></label>
           <div class="publish-auth">
             <strong class="admin-chip">jack</strong>
             <input id="publishPassword" type="password" autocomplete="current-password" placeholder="输入发布密码">
@@ -111,7 +117,7 @@
 
       <section class="feed-panel">
         <div class="feed-heading">
-          <div><span class="section-kicker">02 / YOUR ARCHIVE</span><h2>已发布</h2></div>
+          <div><span class="section-kicker" id="feedKicker">02 / YOUR ARCHIVE</span><h2 id="feedTitle">已发布</h2></div>
           <div class="feed-tools">
             <label class="search-box"><span>⌕</span><input id="search" type="search" placeholder="搜索备份"></label>
             <button class="sort-button" id="sortButton" type="button">最新 <span>↕</span></button>
@@ -121,7 +127,7 @@
           <div class="loading-state"><span class="loader"></span><p>正在取回你的备份…</p></div>
         </div>
         <div class="empty-state" id="emptyState" hidden>
-          <div class="empty-mark">✦</div><h3>这里还很安静</h3><p>写下第一条提示词，它会马上出现在这里。</p><button type="button" class="text-button" id="emptyCta">开始写第一条 ↗</button>
+          <div class="empty-mark">✦</div><h3 id="emptyTitle">这里还很安静</h3><p id="emptyCopy">写下第一条提示词，它会马上出现在这里。</p><button type="button" class="text-button" id="emptyCta">开始写第一条 ↗</button>
         </div>
       </section>
     </section>
@@ -155,6 +161,6 @@
     <span class="cursor-ring" id="cursorRing"><i></i></span>
     <span class="cursor-dot" id="cursorDot"><i></i></span>
   </div>
-  <script src="app.js?v=20260727-16"></script>
+  <script src="app.js?v=20260727-17"></script>
 </body>
 </html>

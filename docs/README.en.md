@@ -2,7 +2,7 @@
 
 # tishici
 
-A personal prompt archive that is ready as soon as the browser opens: text on top, an image or video preview below, with composing, publishing, and browsing on one page.
+A personal prompt and pocket-note archive that is ready as soon as the browser opens. It defaults to prompts, while a separate Pocket Notes view keeps quick text, images, and videos in the same two-column workspace.
 
 [简体中文](../README.md) · **English** · [日本語](README.ja.md)
 
@@ -17,18 +17,19 @@ A personal prompt archive that is ready as soon as the browser opens: text on to
 
 ## What it is
 
-tishici is a small self-hosted archive for personal creative notes. It keeps the generation model, title, prompt, and one image or video preview together on a single card.
+tishici is a small self-hosted archive for personal creative notes. Prompt mode keeps the generation model, title, prompt, and one image or video preview together on a card. Pocket Notes provides a separate composer and feed for quick thoughts, tasks, images, or videos.
 
-The interface opens in a photographer-inspired dark mode. Desktop pages show exactly six cards and include search, sorting, copy, delete, and an in-page translucent media viewer.
+The interface opens in a photographer-inspired dark mode and always defaults to prompts. The feed renders six cards initially and lazy-loads more while scrolling, with search, sorting, copy, delete, and an in-page translucent media viewer.
 
 ## Why it is useful
 
 - **Read immediately:** visitors can view, search, copy, and open published items without an account.
 - **Gate publishing:** publishing and deletion require the same runtime password, remembered for the current session after verification.
 - **Keep drafts local:** typing or selecting media automatically stores the draft in IndexedDB, with a text fallback in localStorage. A successful publish removes the draft.
+- **Keep modes separate:** prompts and pocket notes have independent local drafts and feeds, so switching never overwrites either draft.
 - **Compress in the browser:** files at or below 1 MiB remain unchanged. Larger files are converted locally; the server only validates type and size.
 - **Separate image and video work:** each type has its own model picker, while full-window drop automatically detects the incoming media type.
-- **Scan quickly:** prompts, models, and media stay together, with a visible copy action and six-card pagination.
+- **Scan quickly:** prompts, models, and media stay together. The feed starts with six cards and loads the next batch as you scroll.
 
 ## Quick start
 
@@ -56,7 +57,7 @@ For production, expose only `site/` as the document root and set `TISHICI_PUBLIS
 ## How it works
 
 ```text
-Type a prompt / drop media
+Type a prompt or pocket note / drop media
             ↓
 Browser saves a local draft
             ↓
@@ -79,7 +80,8 @@ Images are converted to WebP. Videos become playable WebM visual previews below 
 | Compression threshold | Starts only when the file is strictly larger than 1 MiB |
 | Server limit | Result must be no larger than 1 MiB; no server-side transcoding |
 | Drafts | IndexedDB with localStorage text fallback |
-| Archive | Search, ascending/descending order, six cards per page |
+| Workspaces | Prompts by default; Pocket Notes opens only when selected |
+| Archive | Search, ascending/descending order, six initial cards with lazy loading |
 | Access control | Public reading; password-gated publish and delete |
 | Storage | JSON index in `tishici-storage/`, media in `site/uploads/` |
 
