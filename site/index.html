@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101010">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>提示词备份库 · tishici</title>
+  <script>try{if(localStorage.getItem('tishici-theme-v2')!=='light')document.documentElement.classList.add('dark')}catch(e){document.documentElement.classList.add('dark')}</script>
+  <script>try{if(matchMedia('(hover:hover) and (pointer:fine)').matches&&!matchMedia('(prefers-reduced-motion:reduce)').matches)document.documentElement.classList.add('custom-pointer-ready')}catch(e){}</script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ff6542'/%3E%3Cpath d='M19 19h26v7H27v7h15v7H27v5h18v7H19z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css?v=20260727-11">
+</head>
+<body>
+  <div class="particle-field" id="particleField" aria-hidden="true"></div>
+  <div class="grain"></div>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="提示词备份库首页">
+      <span class="brand-mark">t</span>
+      <span class="brand-copy"><strong>提示词备份库</strong><small>jack / prompt archive</small></span>
+    </a>
+    <div class="topbar-actions">
+      <span class="private-pill"><i></i> jack · 打开即用</span>
+      <button class="icon-button" id="themeToggle" type="button" aria-label="切换明暗模式">☼</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">JACK'S CONTACT SHEET · PROMPT ARCHIVE</p>
+        <h1>提示词工作台 <em>随手存，马上发。</em></h1>
+        <p class="hero-copy">像整理底片一样，保存每一次灵感。</p>
+      </div>
+      <div class="hero-count"><span id="count">0</span><small>条备份</small></div>
+    </section>
+
+    <section class="workspace">
+      <article class="composer-card">
+        <div class="card-heading">
+          <div>
+            <span class="section-kicker">01 / COMPOSE</span>
+            <h2>新建备份</h2>
+          </div>
+          <span class="draft-state" id="draftState">自动保存草稿</span>
+        </div>
+        <form id="promptForm">
+          <div class="form-scroll">
+          <label class="field-label">提示词类型 <span>选择生成方向</span></label>
+          <div class="type-tabs" id="typeTabs" role="tablist" aria-label="提示词类型">
+            <button class="type-tab active" type="button" data-type="image" role="tab" aria-selected="true"><span>◫</span> 图片</button>
+            <button class="type-tab" type="button" data-type="video" role="tab" aria-selected="false"><span>▶</span> 视频</button>
+          </div>
+          <label class="field-label">常用模型 <span id="modelCount">5 个可选</span></label>
+          <div class="model-select-shell">
+            <button class="model-trigger" id="modelTrigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
+            <div class="model-picker" id="modelPicker" role="listbox" aria-label="常用模型" aria-hidden="true"></div>
+          </div>
+
+          <label class="field-label" for="title">给它一个名字 <span>可选</span></label>
+          <input id="title" name="title" maxlength="100" placeholder="例如：雨夜城市肖像" autocomplete="off">
+          <label class="field-label" for="prompt">提示词 <span>必填</span></label>
+          <textarea id="prompt" name="prompt" rows="9" maxlength="12000" placeholder="把提示词粘贴在这里……&#10;&#10;你可以保留换行、参数和备注，它们都会原样保存。" required></textarea>
+          <div class="composer-meta"><span id="charCount">0 / 12,000</span><span>只存到你的备份库</span></div>
+
+          <label class="field-label"><span id="mediaLabel">参考图片</span> <span id="mediaHint">可选 · 超过 1MB 自动压缩为 WebP</span></label>
+          <label class="dropzone" id="dropzone" for="media">
+            <input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp">
+            <span class="upload-icon">↥</span>
+            <span class="drop-title" id="dropTitle">拖一张图到这里，或点击选择</span>
+            <span class="drop-hint" id="dropHint">发布前自动压缩，图片会显示在提示词下方</span>
+          </label>
+          <div class="image-preview" id="mediaPreview" hidden>
+            <img id="previewImage" alt="待上传图片预览">
+            <video id="previewVideo" controls playsinline preload="metadata" hidden></video>
+            <div><strong id="fileName"></strong><span id="fileSize"></span></div>
+            <button type="button" class="remove-image" id="removeMedia" aria-label="移除素材">×</button>
+          </div>
+
+          <label class="field-label publish-password-label" for="publishPassword">发布身份 <span id="passwordHint">jack · 首次发布需密码</span></label>
+          <div class="publish-auth">
+            <strong class="admin-chip">jack</strong>
+            <input id="publishPassword" type="password" autocomplete="current-password" placeholder="输入发布密码">
+          </div>
+          </div>
+          <div class="form-dock">
+            <div class="form-actions">
+              <button class="ghost-button" id="clearButton" type="button">清空</button>
+              <button class="publish-button" id="publishButton" type="submit"><span>发布备份</span><b>↗</b></button>
+            </div>
+            <p class="form-note" id="formNote" role="status"></p>
+          </div>
+        </form>
+      </article>
+
+      <section class="feed-panel">
+        <div class="feed-heading">
+          <div><span class="section-kicker">02 / YOUR ARCHIVE</span><h2>已发布</h2></div>
+          <div class="feed-tools">
+            <label class="search-box"><span>⌕</span><input id="search" type="search" placeholder="搜索备份"></label>
+            <button class="sort-button" id="sortButton" type="button">最新 <span>↕</span></button>
+          </div>
+        </div>
+        <div class="feed" id="feed">
+          <div class="loading-state"><span class="loader"></span><p>正在取回你的备份…</p></div>
+        </div>
+        <div class="empty-state" id="emptyState" hidden>
+          <div class="empty-mark">✦</div><h3>这里还很安静</h3><p>写下第一条提示词，它会马上出现在这里。</p><button type="button" class="text-button" id="emptyCta">开始写第一条 ↗</button>
+        </div>
+        <div class="archive-pager" id="archivePager" hidden>
+          <button id="prevPage" type="button" aria-label="上一页">‹</button>
+          <span id="pageLabel">1 / 1</span>
+          <button id="nextPage" type="button" aria-label="下一页">›</button>
+        </div>
+      </section>
+    </section>
+  </main>
+  <footer class="footer"><span>你的灵感值得被保存。</span><span class="mono">TISHICI / 2026</span></footer>
+  <div class="global-drop-overlay" id="globalDropOverlay" aria-hidden="true">
+    <div class="global-drop-card">
+      <span class="global-drop-aperture"><i></i></span>
+      <span class="section-kicker">DROP TO IMPORT / JACK'S DARKROOM</span>
+      <strong id="globalDropTitle">松手，素材自动进入草稿</strong>
+      <small id="globalDropHint">图片或视频 · 自动识别 · 浏览器本地压缩</small>
+    </div>
+  </div>
+  <div class="media-modal" id="mediaModal" role="dialog" aria-modal="true" aria-labelledby="mediaModalTitle" hidden>
+    <div class="media-modal-panel">
+      <header class="media-modal-heading">
+        <div>
+          <span class="section-kicker" id="mediaModalType">MEDIA PREVIEW</span>
+          <h2 id="mediaModalTitle">素材预览</h2>
+        </div>
+        <button class="media-modal-close" id="mediaModalClose" type="button" aria-label="关闭素材预览">×</button>
+      </header>
+      <div class="media-modal-stage">
+        <img id="mediaModalImage" alt="" hidden>
+        <video id="mediaModalVideo" controls playsinline preload="metadata" hidden></video>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="cursor-layer" id="cursorLayer" aria-hidden="true">
+    <span class="cursor-ring" id="cursorRing"><i></i></span>
+    <span class="cursor-dot" id="cursorDot"><i></i></span>
+  </div>
+  <script src="app.js?v=20260727-12"></script>
+</body>
+</html>

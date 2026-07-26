@@ -1,0 +1,20 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+
+# Runtime data and user uploads
+tishici-storage/
+site/data/*
+site/uploads/*
+!site/uploads/.gitkeep
+
+# Local build and release output
+dist/
+outputs/
+work/
+
+# Local editor and tooling state
+.idea/
+.vscode/
