@@ -106,6 +106,15 @@
   });
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  const detectMediaKind = (file) => {
+    const mime = String(file?.type || '').toLowerCase();
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    const extension = String(file?.name || '').split('.').pop()?.toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'webp'].includes(extension)) return 'image';
+    if (['mp4', 'webm', 'mov', 'm4v'].includes(extension)) return 'video';
+    return null;
+  };
   const formatDate = (value) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '刚刚';
@@ -176,11 +185,11 @@
   };
   const renderMediaInput = () => {
     const videoMode = state.type === 'video';
-    media.accept = videoMode ? 'video/mp4,video/webm,video/quicktime' : 'image/jpeg,image/png,image/webp';
-    $('#mediaLabel').textContent = videoMode ? '参考视频' : '参考图片';
-    $('#mediaHint').textContent = videoMode ? '可选 · 完整时长 · 超过 1MB 浏览器压缩为 WebM' : '可选 · 超过 1MB 自动压缩为 WebP';
-    $('#dropTitle').textContent = videoMode ? '拖一段视频到这里，或点击选择' : '拖一张图到这里，或点击选择';
-    $('#dropHint').textContent = videoMode ? '完整时长会保留，压缩后显示在提示词下方' : '发布前自动压缩，图片会显示在提示词下方';
+    media.accept = videoMode ? 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v' : 'image/jpeg,image/png,image/webp';
+    $('#mediaLabel').textContent = videoMode ? '参考图片或视频' : '参考图片';
+    $('#mediaHint').textContent = videoMode ? '可选 · 图片或完整视频 · 超过 1MB 浏览器压缩' : '可选 · 超过 1MB 自动压缩为 WebP';
+    $('#dropTitle').textContent = videoMode ? '拖入图片或视频，或点击选择' : '拖一张图到这里，或点击选择';
+    $('#dropHint').textContent = videoMode ? '图片可用于图生视频；视频会保留完整时长' : '发布前自动压缩，图片会显示在提示词下方';
   };
   const renderModelPicker = () => {
     document.querySelectorAll('.type-tab').forEach((tab) => {
@@ -471,14 +480,14 @@
       { maxDimension: 360, fps: 10, videoBitsPerSecond: 120000 },
     ];
     for (const options of attempts) {
-      const blob = await compressVideoAttempt(file, options);
-      if (blob && blob.size <= MAX_VIDEO_BYTES) {
-        try {
+      try {
+        const blob = await compressVideoAttempt(file, options);
+        if (blob && blob.size <= MAX_VIDEO_BYTES) {
           await validateCompressedVideo(blob, duration);
           const baseName = (file.name || 'prompt-video').replace(/\.[^.]+$/, '').slice(0, 80) || 'prompt-video';
           return new File([blob], `${baseName}.webm`, { type: 'video/webm', lastModified: Date.now() });
-        } catch {}
-      }
+        }
+      } catch {}
     }
     throw new Error('video_compression_failed');
   };
@@ -490,9 +499,10 @@
   };
   const setFile = async (file) => {
     if (!file) return;
-    const isVideo = state.type === 'video';
-    const valid = isVideo ? /^video\/(mp4|webm|quicktime)$/.test(file.type) : /^image\/(jpeg|png|webp)$/.test(file.type);
-    if (!valid) return setNote(isVideo ? '请先选择 MP4、WebM 或 MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。', true);
+    const fileKind = detectMediaKind(file);
+    const isVideo = fileKind === 'video';
+    const valid = fileKind && (state.type === 'video' || fileKind === 'image');
+    if (!valid) return setNote(state.type === 'video' ? '请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。', true);
     const token = ++state.fileToken;
     const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
     if (file.size <= maxBytes) {
@@ -519,10 +529,10 @@
   const clearFile = () => { state.fileToken += 1; state.file = null; state.mediaKind = null; state.originalFileName = ''; if (state.previewUrl) URL.revokeObjectURL(state.previewUrl); state.previewUrl = null; media.value = ''; previewImage.removeAttribute('src'); previewVideo.pause(); previewVideo.removeAttribute('src'); previewVideo.load(); previewImage.hidden = false; previewVideo.hidden = true; mediaPreview.hidden = true; dropzone.hidden = false; };
   const importDroppedFile = async (file) => {
     if (!file) return;
-    const detectedType = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'image' : state.type;
-    if (detectedType !== state.type) {
+    const detectedType = detectMediaKind(file);
+    if (detectedType === 'video' && state.type !== 'video') {
       if (state.file) clearFile();
-      state.type = detectedType;
+      state.type = 'video';
       setModelMenu(false);
       renderModelPicker();
     }
@@ -582,7 +592,23 @@
     globalDragDepth = 0;
     globalDropOverlay.classList.remove('is-visible');
   };
-  const hasDraggedFiles = (event) => event.dataTransfer?.types ? Array.from(event.dataTransfer.types).includes('Files') : false;
+  const hasDraggedFiles = (event) => {
+    const transfer = event.dataTransfer;
+    if (!transfer) return false;
+    const types = Array.from(transfer.types || [], (type) => String(type).toLowerCase());
+    if (types.includes('files')) return true;
+    return Array.from(transfer.items || []).some((item) => String(item.kind).toLowerCase() === 'file');
+  };
+  const getFirstDraggedFile = (transfer) => {
+    const directFile = transfer?.files?.[0];
+    if (directFile) return directFile;
+    for (const item of Array.from(transfer?.items || [])) {
+      if (String(item.kind).toLowerCase() !== 'file') continue;
+      const file = item.getAsFile?.();
+      if (file) return file;
+    }
+    return null;
+  };
   const updateGlobalDropCopy = (event) => {
     const mime = event.dataTransfer?.items?.[0]?.type || '';
     const kind = mime.startsWith('video/') ? '视频' : mime.startsWith('image/') ? '图片' : '素材';
@@ -611,13 +637,13 @@
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
     resetGlobalDrop();
-    importDroppedFile(event.dataTransfer.files[0]);
+    importDroppedFile(getFirstDraggedFile(event.dataTransfer));
   });
   document.addEventListener('dragend', resetGlobalDrop);
   window.addEventListener('blur', resetGlobalDrop);
   $('#typeTabs').addEventListener('click', (event) => {
     const tab = event.target.closest('.type-tab'); if (!tab || !MODELS[tab.dataset.type]) return;
-    if (state.file && state.mediaKind && state.mediaKind !== tab.dataset.type) clearFile();
+    if (state.file && state.mediaKind === 'video' && tab.dataset.type === 'image') clearFile();
     state.type = tab.dataset.type; setModelMenu(false); renderModelPicker(); saveDraft();
   });
   $('#modelTrigger').addEventListener('click', () => setModelMenu($('#modelTrigger').getAttribute('aria-expanded') !== 'true'));
