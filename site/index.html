@@ -11,7 +11,7 @@
   <script>try{if(localStorage.getItem('tishici-theme-v2')!=='light')document.documentElement.classList.add('dark')}catch(e){document.documentElement.classList.add('dark')}</script>
   <script>try{if(matchMedia('(hover:hover) and (pointer:fine)').matches&&!matchMedia('(prefers-reduced-motion:reduce)').matches)document.documentElement.classList.add('custom-pointer-ready')}catch(e){}</script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ff6542'/%3E%3Cpath d='M19 19h26v7H27v7h15v7H27v5h18v7H19z' fill='white'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=20260727-11">
+  <link rel="stylesheet" href="styles.css?v=20260727-12">
 </head>
 <body>
   <div class="particle-field" id="particleField" aria-hidden="true"></div>
@@ -72,6 +72,20 @@
             <span class="drop-title" id="dropTitle">拖一张图到这里，或点击选择</span>
             <span class="drop-hint" id="dropHint">发布前自动压缩，图片会显示在提示词下方</span>
           </label>
+          <div class="processing-card" id="processingCard" aria-live="polite" hidden>
+            <span class="processing-orb" aria-hidden="true"><i></i></span>
+            <div class="processing-copy">
+              <div class="processing-heading">
+                <strong id="processingTitle">已接收素材</strong>
+                <b id="processingPercent">4%</b>
+              </div>
+              <span class="processing-file" id="processingFile"></span>
+              <div class="processing-track" id="processingProgress" role="progressbar" aria-label="浏览器本地压缩进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="4">
+                <i id="processingBar"></i>
+              </div>
+              <small id="processingDetail">正在读取文件…</small>
+            </div>
+          </div>
           <div class="image-preview" id="mediaPreview" hidden>
             <img id="previewImage" alt="待上传图片预览">
             <video id="previewVideo" controls playsinline preload="metadata" hidden></video>
@@ -120,7 +134,7 @@
   <footer class="footer"><span>你的灵感值得被保存。</span><span class="mono">TISHICI / 2026</span></footer>
   <div class="global-drop-overlay" id="globalDropOverlay" aria-hidden="true">
     <div class="global-drop-card">
-      <span class="global-drop-aperture"><i></i></span>
+      <span class="global-drop-aperture"><i></i><b aria-hidden="true">✓</b></span>
       <span class="section-kicker">DROP TO IMPORT / JACK'S DARKROOM</span>
       <strong id="globalDropTitle">松手，素材自动进入草稿</strong>
       <small id="globalDropHint">图片或视频 · 自动识别 · 浏览器本地压缩</small>
@@ -146,6 +160,6 @@
     <span class="cursor-ring" id="cursorRing"><i></i></span>
     <span class="cursor-dot" id="cursorDot"><i></i></span>
   </div>
-  <script src="app.js?v=20260727-14"></script>
+  <script src="app.js?v=20260727-15"></script>
 </body>
 </html>

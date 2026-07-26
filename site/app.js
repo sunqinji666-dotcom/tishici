@@ -76,6 +76,7 @@
   const form = $('#promptForm'), feed = $('#feed'), empty = $('#emptyState');
   const title = $('#title'), prompt = $('#prompt'), media = $('#media'), dropzone = $('#dropzone');
   const mediaPreview = $('#mediaPreview'), previewImage = $('#previewImage'), previewVideo = $('#previewVideo'), fileName = $('#fileName'), fileSize = $('#fileSize');
+  const processingCard = $('#processingCard'), processingTitle = $('#processingTitle'), processingPercent = $('#processingPercent'), processingFile = $('#processingFile'), processingProgress = $('#processingProgress'), processingBar = $('#processingBar'), processingDetail = $('#processingDetail');
   const MODELS = {
     image: [
       { name: 'G Image 2', meta: '4K', icon: '✺' },
@@ -92,7 +93,7 @@
       { name: 'Hailuo 2.3', meta: '1080P · 6–10s', icon: '◉' },
     ],
   };
-  const state = { items: [], newestFirst: true, page: 1, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null };
+  const state = { items: [], newestFirst: true, page: 1, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
   const draftKey = 'tishici-draft-v2';
   const PAGE_SIZE = 6;
   const MAX_IMAGE_BYTES = 1024 * 1024;
@@ -125,6 +126,12 @@
     return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
   };
   const formatBytes = (bytes) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const formatDuration = (seconds) => {
+    const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+    return minutes ? `${minutes}:${String(remainder).padStart(2, '0')}` : `${remainder} 秒`;
+  };
   const showToast = (message) => { const toast = $('#toast'); toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2600); };
   const openMedia = (trigger) => {
     const modal = $('#mediaModal'), modalImage = $('#mediaModalImage'), modalVideo = $('#mediaModalVideo');
@@ -226,7 +233,39 @@
     try { const db = await draftDb; db.transaction('drafts', 'readwrite').objectStore('drafts').delete('active'); } catch {}
   };
   const updateCount = () => { $('#charCount').textContent = `${prompt.value.length.toLocaleString()} / 12,000`; };
+  const syncPublishButton = () => {
+    const button = $('#publishButton');
+    button.disabled = state.isProcessing || state.isPublishing;
+    button.querySelector('span').textContent = state.isProcessing ? '素材处理中…' : state.isPublishing ? '正在保存…' : '发布备份';
+  };
+  const showProcessing = (file, kind, progress, heading, detail, status = 'working') => {
+    const wasHidden = processingCard.hidden;
+    const nextProgress = status === 'error' ? 100 : Math.max(state.processingProgress, Math.min(99, Math.round(progress)));
+    state.processingProgress = nextProgress;
+    state.isProcessing = status === 'working';
+    processingCard.hidden = false;
+    processingCard.dataset.state = status;
+    processingTitle.textContent = heading;
+    processingPercent.textContent = status === 'error' ? '失败' : `${nextProgress}%`;
+    processingFile.textContent = `${file.name || (kind === 'video' ? '未命名视频' : '未命名图片')} · ${formatBytes(file.size)}`;
+    processingProgress.setAttribute('aria-valuenow', String(status === 'error' ? 0 : nextProgress));
+    processingBar.style.transform = `scaleX(${status === 'error' ? 1 : Math.max(.04, nextProgress / 100)})`;
+    processingDetail.textContent = detail;
+    dropzone.hidden = true;
+    mediaPreview.hidden = true;
+    $('#draftState').textContent = status === 'error' ? '素材处理失败' : `浏览器本地处理中 · ${nextProgress}%`;
+    syncPublishButton();
+    if (wasHidden) requestAnimationFrame(() => processingCard.scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block: 'nearest' }));
+  };
+  const hideProcessing = () => {
+    processingCard.hidden = true;
+    processingCard.dataset.state = '';
+    state.processingProgress = 0;
+    state.isProcessing = false;
+    syncPublishButton();
+  };
   const showPreview = (file, originalName, note, kind = state.type) => {
+    hideProcessing();
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
     state.file = file; state.mediaKind = kind; state.originalFileName = originalName || file.name; state.previewUrl = URL.createObjectURL(file);
     const isVideo = kind === 'video';
@@ -260,11 +299,13 @@
     if (title.value || prompt.value || state.file) $('#draftState').textContent = '已恢复本机草稿';
   };
   const blobFromCanvas = (canvas, type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
-  const compressImage = async (file) => {
+  const compressImage = async (file, onProgress = () => {}) => {
     const sourceUrl = URL.createObjectURL(file);
     try {
+      onProgress(12, '正在读取图片像素…');
       const source = new Image();
       source.decoding = 'async'; source.src = sourceUrl; await source.decode();
+      onProgress(24, '图片读取完成，正在计算最佳尺寸…');
       let width = source.naturalWidth, height = source.naturalHeight;
       const scale = Math.min(1, 2400 / Math.max(width, height));
       width = Math.max(1, Math.round(width * scale)); height = Math.max(1, Math.round(height * scale));
@@ -273,28 +314,35 @@
       let compressed = null;
       for (let dimensionTry = 0; dimensionTry < 7 && !compressed; dimensionTry += 1) {
         canvas.width = width; canvas.height = height; context.clearRect(0, 0, width, height); context.drawImage(source, 0, 0, width, height);
-        for (let quality = 0.86; quality >= 0.34; quality -= 0.08) {
+        let qualityTry = 0;
+        for (let quality = 0.86; quality >= 0.34; quality -= 0.08, qualityTry += 1) {
+          const attemptProgress = 26 + Math.round(((dimensionTry * 7 + qualityTry) / 49) * 68);
+          onProgress(attemptProgress, '正在优化尺寸和画质，目标控制在 1MB 内…');
           const blob = await blobFromCanvas(canvas, 'image/webp', quality);
           if (blob && blob.size <= MAX_IMAGE_BYTES) { compressed = blob; break; }
         }
         if (!compressed) { width = Math.max(480, Math.round(width * 0.82)); height = Math.max(480, Math.round(height * 0.82)); }
       }
       if (!compressed) throw new Error('compression_failed');
+      onProgress(97, '压缩完成，正在生成预览…');
       const baseName = (file.name || 'prompt-image').replace(/\.[^.]+$/, '').slice(0, 80) || 'prompt-image';
       return new File([compressed], `${baseName}.webp`, { type: 'image/webp', lastModified: Date.now() });
     } finally { URL.revokeObjectURL(sourceUrl); }
   };
-  const compressVideoDirectAttempt = async (file, videoBitsPerSecond) => {
+  const compressVideoDirectAttempt = async (file, videoBitsPerSecond, onProgress = () => {}) => {
     const sourceUrl = URL.createObjectURL(file);
     const video = document.createElement('video');
     video.preload = 'auto'; video.muted = true; video.playsInline = true; video.src = sourceUrl;
-    let recorder = null, sourceStream = null, outputStream = null;
+    let recorder = null, sourceStream = null, outputStream = null, reportProgress = null;
     try {
       await new Promise((resolve, reject) => {
         video.onloadeddata = resolve;
         video.onerror = () => reject(new Error('video_decode_failed'));
       });
       if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('video_duration_unavailable');
+      reportProgress = () => onProgress(Math.min(1, video.currentTime / video.duration), video.currentTime, video.duration);
+      video.addEventListener('timeupdate', reportProgress);
+      reportProgress();
       if (typeof video.captureStream !== 'function' || !window.MediaRecorder || !window.MediaStream) throw new Error('video_compression_unsupported');
       sourceStream = video.captureStream();
       const videoTracks = sourceStream.getVideoTracks();
@@ -333,10 +381,11 @@
       if (recorder && recorder.state !== 'inactive') recorder.stop();
       if (outputStream) outputStream.getTracks().forEach((track) => track.stop());
       if (sourceStream) sourceStream.getTracks().forEach((track) => track.stop());
+      if (reportProgress) video.removeEventListener('timeupdate', reportProgress);
       video.pause(); video.removeAttribute('src'); video.load(); URL.revokeObjectURL(sourceUrl);
     }
   };
-  const compressVideoAttempt = async (file, options) => {
+  const compressVideoAttempt = async (file, options, onProgress = () => {}) => {
     const sourceUrl = URL.createObjectURL(file);
     const video = document.createElement('video');
     video.preload = 'auto'; video.muted = true; video.playsInline = true; video.src = sourceUrl;
@@ -405,6 +454,7 @@
           context.drawImage(video, 0, 0, width, height);
           if (canvasTrack && typeof canvasTrack.requestFrame === 'function') canvasTrack.requestFrame();
           lastDrawnAt = mediaTime;
+          onProgress(Math.min(1, mediaTime / video.duration), mediaTime, video.duration);
         }
         if ('requestVideoFrameCallback' in video) videoFrame = video.requestVideoFrameCallback(drawFrame);
         else animationFrame = requestAnimationFrame(drawFrame);
@@ -450,24 +500,42 @@
       preview.pause(); preview.removeAttribute('src'); preview.load(); URL.revokeObjectURL(previewUrl);
     }
   };
-  const compressVideo = async (file) => {
+  const compressVideo = async (file, onProgress = () => {}) => {
     const sourceUrl = URL.createObjectURL(file);
     const probe = document.createElement('video');
     probe.preload = 'metadata'; probe.src = sourceUrl;
-    const duration = await new Promise((resolve, reject) => {
-      probe.onloadedmetadata = () => resolve(probe.duration);
-      probe.onerror = () => reject(new Error('video_decode_failed'));
-    });
-    URL.revokeObjectURL(sourceUrl);
+    let duration = 0;
+    try {
+      duration = await new Promise((resolve, reject) => {
+        probe.onloadedmetadata = () => resolve(probe.duration);
+        probe.onerror = () => reject(new Error('video_decode_failed'));
+      });
+    } finally {
+      probe.removeAttribute('src'); probe.load(); URL.revokeObjectURL(sourceUrl);
+    }
+    let lastUiProgress = -1;
+    const emitProgress = (progress, detail) => {
+      const rounded = Math.min(99, Math.max(0, Math.round(progress)));
+      if (rounded === lastUiProgress) return;
+      lastUiProgress = rounded;
+      onProgress(rounded, detail);
+    };
+    emitProgress(8, `视频读取完成 · 完整时长 ${formatDuration(duration)}`);
     const targetBitrate = (MAX_VIDEO_BYTES * 8 * 0.84) / Math.max(1, duration);
     const directBitrates = [
       Math.min(1400000, Math.max(160000, Math.round(targetBitrate * 0.88))),
       Math.min(900000, Math.max(100000, Math.round(targetBitrate * 0.62))),
     ];
-    for (const videoBitsPerSecond of directBitrates) {
+    const directStages = [{ start: 10, end: 50 }, { start: 50, end: 72 }];
+    for (let index = 0; index < directBitrates.length; index += 1) {
+      const stage = directStages[index];
       try {
-        const blob = await compressVideoDirectAttempt(file, videoBitsPerSecond);
+        emitProgress(stage.start, `正在本地压缩视频 · 第 ${index + 1} 轮画质优化`);
+        const blob = await compressVideoDirectAttempt(file, directBitrates[index], (fraction, current, total) => {
+          emitProgress(stage.start + (stage.end - stage.start) * fraction, `完整时长保留 · ${formatDuration(current)} / ${formatDuration(total)}`);
+        });
         if (blob && blob.size <= MAX_VIDEO_BYTES) {
+          emitProgress(98, '体积已达标，正在校验完整时长…');
           await validateCompressedVideo(blob, duration);
           const baseName = (file.name || 'prompt-video').replace(/\.[^.]+$/, '').slice(0, 80) || 'prompt-video';
           return new File([blob], `${baseName}.webm`, { type: 'video/webm', lastModified: Date.now() });
@@ -479,10 +547,16 @@
       { maxDimension: 480, fps: 12, videoBitsPerSecond: Math.min(700000, Math.max(120000, Math.round(targetBitrate * 0.66))) },
       { maxDimension: 360, fps: 10, videoBitsPerSecond: 120000 },
     ];
-    for (const options of attempts) {
+    const canvasStages = [{ start: 72, end: 83 }, { start: 83, end: 92 }, { start: 92, end: 98 }];
+    for (let index = 0; index < attempts.length; index += 1) {
+      const stage = canvasStages[index];
       try {
-        const blob = await compressVideoAttempt(file, options);
+        emitProgress(stage.start, `正在继续优化体积 · 第 ${index + 3} 轮`);
+        const blob = await compressVideoAttempt(file, attempts[index], (fraction, current, total) => {
+          emitProgress(stage.start + (stage.end - stage.start) * fraction, `完整时长保留 · ${formatDuration(current)} / ${formatDuration(total)}`);
+        });
         if (blob && blob.size <= MAX_VIDEO_BYTES) {
+          emitProgress(99, '体积已达标，正在校验完整时长…');
           await validateCompressedVideo(blob, duration);
           const baseName = (file.name || 'prompt-video').replace(/\.[^.]+$/, '').slice(0, 80) || 'prompt-video';
           return new File([blob], `${baseName}.webm`, { type: 'video/webm', lastModified: Date.now() });
@@ -502,31 +576,72 @@
     const fileKind = detectMediaKind(file);
     const isVideo = fileKind === 'video';
     const valid = fileKind && (state.type === 'video' || fileKind === 'image');
-    if (!valid) return setNote(state.type === 'video' ? '请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。', true);
+    if (!valid) {
+      const message = state.type === 'video' ? '请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。';
+      setNote(message, true);
+      showToast('没有识别到可用的图片或视频');
+      return;
+    }
     const token = ++state.fileToken;
+    const kindLabel = isVideo ? '视频' : '图片';
     const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    state.processingProgress = 0;
+    state.file = null;
+    state.mediaKind = null;
+    state.originalFileName = '';
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+    state.previewUrl = null;
+    previewImage.removeAttribute('src');
+    previewVideo.pause(); previewVideo.removeAttribute('src'); previewVideo.load();
+    showProcessing(file, fileKind, 4, `${kindLabel}已接收`, `${formatBytes(file.size)} · 正在检查是否需要压缩`);
+    setNote(`${kindLabel}已经进入浏览器，正在检查素材…`);
+    showToast(`已接收${kindLabel} · ${file.name}`);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (token !== state.fileToken) return;
     if (file.size <= maxBytes) {
       showPreview(file, file.name, isVideo ? '视频未超过 1MB，未压缩' : '原图未超过 1MB，未压缩', isVideo ? 'video' : 'image');
       saveDraft();
+      showToast(`${kindLabel}已接收 · 未超过 1MB，无需压缩`);
       return;
     }
-    mediaPreview.hidden = true; dropzone.hidden = false;
     try {
-      setNote(isVideo ? '视频超过 1MB，正在由浏览器压缩，完整时长会保留…' : '图片超过 1MB，正在由浏览器压缩为 WebP…');
-      const compressed = isVideo ? await compressVideo(file) : await compressImage(file);
+      const progress = (percent, detail) => {
+        if (token !== state.fileToken) return;
+        showProcessing(file, fileKind, percent, `正在压缩${kindLabel}`, detail);
+        setNote(`${kindLabel}正在浏览器本地压缩 · ${Math.round(percent)}%`);
+      };
+      progress(8, isVideo ? '仅使用当前浏览器处理 · 完整时长会保留' : '仅使用当前浏览器处理 · 正在转换为 WebP');
+      const compressed = isVideo ? await compressVideo(file, progress) : await compressImage(file, progress);
       if (token !== state.fileToken) return;
+      showProcessing(file, fileKind, 99, '压缩完成', '正在生成预览并保存本机草稿…');
       showPreview(compressed, file.name, `${isVideo ? '已转换为 WebM' : '已转换为 WebP'} · ${formatBytes(compressed.size)}`, isVideo ? 'video' : 'image');
       saveDraft();
+      showToast(`${kindLabel}压缩完成 · ${formatBytes(compressed.size)}`);
     } catch (error) {
       if (token !== state.fileToken) return;
       state.file = null; state.mediaKind = null;
       const message = isVideo
         ? (error.message === 'video_compression_unsupported' ? '当前浏览器不支持本地视频压缩，请使用最新版 Chrome 或 Edge。' : '这段视频无法压缩到 1MB，请换一段更短或分辨率更低的视频。')
         : '这张图片无法压缩，请换一张图片再试。';
+      showProcessing(file, fileKind, 100, `${kindLabel}压缩失败`, message, 'error');
+      dropzone.hidden = false;
       setNote(message, true);
+      showToast(`${kindLabel}压缩失败 · 请换一份素材`);
     }
   };
-  const clearFile = () => { state.fileToken += 1; state.file = null; state.mediaKind = null; state.originalFileName = ''; if (state.previewUrl) URL.revokeObjectURL(state.previewUrl); state.previewUrl = null; media.value = ''; previewImage.removeAttribute('src'); previewVideo.pause(); previewVideo.removeAttribute('src'); previewVideo.load(); previewImage.hidden = false; previewVideo.hidden = true; mediaPreview.hidden = true; dropzone.hidden = false; };
+  const clearFile = () => {
+    state.fileToken += 1;
+    state.file = null; state.mediaKind = null; state.originalFileName = '';
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+    state.previewUrl = null;
+    media.value = '';
+    previewImage.removeAttribute('src');
+    previewVideo.pause(); previewVideo.removeAttribute('src'); previewVideo.load();
+    previewImage.hidden = false; previewVideo.hidden = true;
+    mediaPreview.hidden = true;
+    hideProcessing();
+    dropzone.hidden = false;
+  };
   const importDroppedFile = async (file) => {
     if (!file) return;
     const detectedType = detectMediaKind(file);
@@ -570,14 +685,15 @@
   };
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (state.isProcessing) return setNote('素材仍在浏览器本地压缩，请等进度完成后再发布。', true);
     if (!prompt.value.trim()) return setNote('先写下一段提示词，再发布。', true);
-    const button = $('#publishButton'); button.disabled = true; button.querySelector('span').textContent = '正在保存…'; setNote('');
+    state.isPublishing = true; syncPublishButton(); setNote('');
     const body = new FormData(); body.append('title', title.value.trim()); body.append('prompt', prompt.value.trim()); body.append('type', state.type); body.append('model', state.selectedModels[state.type]); body.append('password', $('#publishPassword').value); if (state.file) body.append('media', state.file, state.file.name);
     try {
       const response = await fetch('api.php?action=create', { method: 'POST', body }); const data = await response.json(); if (!response.ok) throw new Error(data.error || '保存失败');
       state.canPublish = true; state.items.unshift(data.item); state.page = 1; form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderPasswordGate(); render(); showToast('已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) { setNote(error.message === 'publish_password_required' ? '请输入正确的发布密码。' : error.message === 'publish_password_not_configured' ? '服务器尚未配置发布密码，请先完成运行环境设置。' : error.message === 'upload_too_large' ? '素材压缩后仍超过 1MB，请换一份更短或更小的素材。' : error.message === 'upload_failed' ? '素材上传失败，请换一份再试。' : '保存失败，请稍后再试。', true); }
-    finally { button.disabled = false; button.querySelector('span').textContent = '发布备份'; }
+    finally { state.isPublishing = false; syncPublishButton(); }
   });
   $('#clearButton').addEventListener('click', async () => { form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; setNote(''); });
   $('#emptyCta').addEventListener('click', () => { title.focus(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
@@ -589,12 +705,15 @@
   const globalDropOverlay = $('#globalDropOverlay');
   let globalDragDepth = 0;
   const resetGlobalDrop = () => {
+    clearTimeout(state.dropReceiptTimer);
+    state.dropReceiptTimer = null;
     globalDragDepth = 0;
-    globalDropOverlay.classList.remove('is-visible');
+    globalDropOverlay.classList.remove('is-visible', 'is-received');
   };
   const hasDraggedFiles = (event) => {
     const transfer = event.dataTransfer;
     if (!transfer) return false;
+    if (transfer.files?.length) return true;
     const types = Array.from(transfer.types || [], (type) => String(type).toLowerCase());
     if (types.includes('files')) return true;
     return Array.from(transfer.items || []).some((item) => String(item.kind).toLowerCase() === 'file');
@@ -614,6 +733,16 @@
     const kind = mime.startsWith('video/') ? '视频' : mime.startsWith('image/') ? '图片' : '素材';
     $('#globalDropTitle').textContent = `松手，${kind}自动进入草稿`;
     $('#globalDropHint').textContent = `${kind === '素材' ? '图片或视频' : kind} · 自动识别 · 浏览器本地压缩`;
+  };
+  const showGlobalDropReceipt = (file) => {
+    clearTimeout(state.dropReceiptTimer);
+    globalDragDepth = 0;
+    const kind = detectMediaKind(file);
+    const kindLabel = kind === 'video' ? '视频' : kind === 'image' ? '图片' : '素材';
+    $('#globalDropTitle').textContent = `已接收${kindLabel}`;
+    $('#globalDropHint').textContent = `${file.name || '未命名素材'} · ${file.size > 1024 * 1024 ? '准备在浏览器本地压缩' : '无需压缩，正在生成预览'}`;
+    globalDropOverlay.classList.add('is-visible', 'is-received');
+    state.dropReceiptTimer = window.setTimeout(resetGlobalDrop, 900);
   };
   document.addEventListener('dragenter', (event) => {
     if (!hasDraggedFiles(event)) return;
@@ -636,8 +765,10 @@
   document.addEventListener('drop', (event) => {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
-    resetGlobalDrop();
-    importDroppedFile(getFirstDraggedFile(event.dataTransfer));
+    const file = getFirstDraggedFile(event.dataTransfer);
+    if (!file) { resetGlobalDrop(); return; }
+    showGlobalDropReceipt(file);
+    importDroppedFile(file);
   });
   document.addEventListener('dragend', resetGlobalDrop);
   window.addEventListener('blur', resetGlobalDrop);

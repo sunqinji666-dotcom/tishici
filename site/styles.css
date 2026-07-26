@@ -440,6 +440,89 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .drop-title { margin-top: 3px; font-size: 10px; font-weight: 650; }
 .drop-hint { display: none; }
 .dropzone.is-dragging { border-color: var(--accent); background: var(--accent-wash); transform: scale(.99); }
+.processing-card {
+  min-height: 74px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 56%, var(--line));
+  border-radius: 10px;
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--accent) 15%, var(--field)), var(--field) 62%),
+    var(--field);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 8px 24px color-mix(in srgb, var(--accent) 9%, transparent);
+  animation: processing-enter 220ms var(--ease-out) both;
+}
+.processing-card[hidden] { display: none; }
+.processing-card[data-state="error"] {
+  border-color: color-mix(in srgb, #ff5e4f 62%, var(--line));
+  background: color-mix(in srgb, #ff5e4f 10%, var(--field));
+}
+.processing-orb {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-solid));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.processing-orb::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 9px var(--accent);
+}
+.processing-orb i {
+  position: absolute;
+  inset: 4px;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  border-right-color: color-mix(in srgb, var(--accent-2) 55%, transparent);
+  border-radius: 50%;
+  animation: processing-spin .72s linear infinite;
+}
+.processing-card[data-state="error"] .processing-orb i { animation: none; border-color: #ff5e4f; opacity: .45; }
+.processing-card[data-state="error"] .processing-orb::after { background: #ff5e4f; box-shadow: 0 0 9px #ff5e4f; }
+.processing-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.processing-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.processing-heading strong { min-width: 0; overflow: hidden; color: var(--ink); font-size: 11px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.processing-heading b { color: var(--accent); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.processing-card[data-state="error"] .processing-heading b { color: #ff725f; }
+.processing-file {
+  overflow: hidden;
+  color: var(--muted);
+  font: 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.processing-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--line-strong) 74%, transparent);
+}
+.processing-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 42%, transparent);
+  transform: scaleX(.04);
+  transform-origin: 0 50%;
+  transition: transform 180ms linear;
+}
+.processing-card small { color: var(--muted); font: 8px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .image-preview {
   min-height: 57px; display: flex; align-items: center; gap: 8px;
   padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--field);
@@ -755,6 +838,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
+.global-drop-overlay.is-received {
+  background:
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 30rem),
+    rgba(5, 6, 8, .74);
+}
+.global-drop-overlay.is-received .global-drop-card {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  transform: translateY(0) scale(1.015);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 30px 90px rgba(0, 0, 0, .46),
+    0 0 110px color-mix(in srgb, var(--accent) 19%, transparent);
+}
 .global-drop-card .section-kicker { margin: 17px 0 8px; }
 .global-drop-card strong {
   color: var(--ink);
@@ -814,6 +910,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   border-radius: 50%;
   transform: rotate(45deg);
 }
+.global-drop-aperture b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 25px;
+  font-weight: 700;
+  opacity: 0;
+  transform: scale(.94);
+  transition: opacity 140ms var(--ease-out), transform 180ms var(--ease-out);
+}
+.global-drop-overlay.is-received .global-drop-aperture {
+  border-color: var(--accent);
+  background: var(--accent);
+  transform: rotate(0) scale(1.04);
+}
+.global-drop-overlay.is-received .global-drop-aperture::before,
+.global-drop-overlay.is-received .global-drop-aperture::after,
+.global-drop-overlay.is-received .global-drop-aperture i { opacity: 0; }
+.global-drop-overlay.is-received .global-drop-aperture b { opacity: 1; transform: scale(1); }
 
 .toast {
   position: fixed; z-index: 50; left: 50%; bottom: 18px;
@@ -873,6 +990,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 @keyframes card-enter { from { opacity: 0; transform: translateY(7px) scale(.99); } }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes processing-enter { from { opacity: 0; transform: translateY(6px) scale(.985); } }
+@keyframes processing-spin { to { transform: rotate(360deg); } }
 @keyframes particle-fall {
   0% { opacity: 0; transform: translate3d(0, -8vh, 0) rotate(0deg); }
   10% { opacity: var(--opacity); }
@@ -911,7 +1030,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
-  .model-picker, .toast, .prompt-card, .media-modal, .media-modal-panel, .global-drop-overlay, .global-drop-card, .global-drop-aperture, button { transition-duration: .01ms !important; transform: none !important; filter: none !important; }
+  .model-picker, .toast, .prompt-card, .media-modal, .media-modal-panel, .global-drop-overlay, .global-drop-card, .global-drop-aperture, .processing-track i, button { transition-duration: .01ms !important; filter: none !important; }
+  .model-picker, .toast, .prompt-card, .media-modal, .media-modal-panel, .global-drop-overlay, .global-drop-card, .global-drop-aperture, button { transform: none !important; }
   .particle, .cursor-layer, .click-burst { display: none !important; animation: none !important; }
 }
 
