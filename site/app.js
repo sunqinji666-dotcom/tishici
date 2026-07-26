@@ -93,9 +93,9 @@
       { name: 'Hailuo 2.3', meta: '1080P · 6–10s', icon: '◉' },
     ],
   };
-  const state = { items: [], newestFirst: true, page: 1, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
+  const state = { items: [], newestFirst: true, visibleCount: 6, filteredCount: 0, lazyLoading: false, lazyScrollTimer: 0, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
   const draftKey = 'tishici-draft-v2';
-  const PAGE_SIZE = 6;
+  const LAZY_BATCH_SIZE = 6;
   const MAX_IMAGE_BYTES = 1024 * 1024;
   const MAX_VIDEO_BYTES = 1024 * 1024;
   const draftDb = new Promise((resolve, reject) => {
@@ -655,33 +655,62 @@
     await setFile(file);
   };
   const setNote = (message, error = false) => { const note = $('#formNote'); note.textContent = message; note.classList.toggle('error', error); };
-  const render = () => {
+  const getFilteredItems = () => {
     const query = $('#search').value.trim().toLowerCase();
-    let items = state.items.filter((item) => !query || `${item.title} ${item.prompt} ${item.type || ''} ${item.model || ''}`.toLowerCase().includes(query));
+    const items = state.items.filter((item) => !query || `${item.title} ${item.prompt} ${item.type || ''} ${item.model || ''}`.toLowerCase().includes(query));
     items.sort((a, b) => state.newestFirst ? new Date(b.createdAt) - new Date(a.createdAt) : new Date(a.createdAt) - new Date(b.createdAt));
+    return items;
+  };
+  const renderCard = (item, index) => `<article class="prompt-card" style="animation-delay:${Math.min((index % LAZY_BATCH_SIZE) * 45, 220)}ms">
+    <div class="prompt-badges"><span>${item.type === 'video' ? '视频' : '图片'}</span>${item.model ? `<b>${escapeHtml(item.model)}</b>` : ''}</div>
+    <div class="prompt-card-head"><h3 class="prompt-card-title ${item.title ? '' : 'untitled'}">${escapeHtml(item.title || '未命名提示词')}</h3><time class="prompt-date">${formatDate(item.createdAt)}</time></div>
+    <p class="prompt-text">${escapeHtml(item.prompt)}</p>
+    ${(() => { const mediaUrl = item.mediaUrl || item.imageUrl || item.videoUrl; if (!mediaUrl) return ''; const mediaType = item.mediaType || (item.videoUrl ? 'video' : 'image'); const mediaTitle = item.title || (mediaType === 'video' ? '视频预览' : '图片预览'); return `<button class="prompt-media-button" type="button" data-media-url="${escapeHtml(mediaUrl)}" data-media-type="${escapeHtml(mediaType)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开${mediaType === 'video' ? '视频' : '图片'}：${escapeHtml(mediaTitle)}">${mediaType === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl)}"></video><span class="media-open-mark is-play">▶</span>` : `<img class="prompt-image" loading="lazy" decoding="async" src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(mediaTitle)}"><span class="media-open-mark">↗</span>`}</button>`; })()}
+    <div class="prompt-card-foot"><span class="prompt-id">${escapeHtml(String(item.author || 'jack').toLowerCase())} · ${escapeHtml(item.id)}</span><div class="card-actions"><button class="card-action copy-action" data-id="${escapeHtml(item.id)}" type="button">复制文字</button><button class="card-action delete-action" data-id="${escapeHtml(item.id)}" type="button">删除</button></div></div>
+  </article>`;
+  const renderLazySentinel = () => state.visibleCount < state.filteredCount
+    ? `<div class="lazy-sentinel" id="lazySentinel" role="status"><span>⌄</span><p>继续向下 · 自动载入更多</p><small>${state.visibleCount} / ${state.filteredCount}</small></div>`
+    : '';
+  const normalizeRenderedVideos = (scope = feed) => scope.querySelectorAll('.prompt-video').forEach(normalizeVideoDuration);
+  const render = () => {
+    const items = getFilteredItems();
     $('#count').textContent = state.items.length;
-    const pager = $('#archivePager');
-    if (!items.length) { feed.innerHTML = ''; empty.hidden = false; pager.hidden = true; return; }
-    const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-    state.page = Math.min(Math.max(1, state.page), totalPages);
-    const visibleItems = items.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
+    state.filteredCount = items.length;
+    if (!items.length) { feed.innerHTML = ''; empty.hidden = false; return; }
+    state.visibleCount = Math.min(items.length, Math.max(LAZY_BATCH_SIZE, state.visibleCount));
+    const visibleItems = items.slice(0, state.visibleCount);
     empty.hidden = true;
-    pager.hidden = false;
-    $('#pageLabel').textContent = `${state.page} / ${totalPages}`;
-    $('#prevPage').disabled = state.page <= 1;
-    $('#nextPage').disabled = state.page >= totalPages;
-    feed.innerHTML = visibleItems.map((item, index) => `<article class="prompt-card" style="animation-delay:${Math.min(index * 45, 220)}ms">
-      <div class="prompt-badges"><span>${item.type === 'video' ? '视频' : '图片'}</span>${item.model ? `<b>${escapeHtml(item.model)}</b>` : ''}</div>
-      <div class="prompt-card-head"><h3 class="prompt-card-title ${item.title ? '' : 'untitled'}">${escapeHtml(item.title || '未命名提示词')}</h3><time class="prompt-date">${formatDate(item.createdAt)}</time></div>
-      <p class="prompt-text">${escapeHtml(item.prompt)}</p>
-      ${(() => { const mediaUrl = item.mediaUrl || item.imageUrl || item.videoUrl; if (!mediaUrl) return ''; const mediaType = item.mediaType || (item.videoUrl ? 'video' : 'image'); const mediaTitle = item.title || (mediaType === 'video' ? '视频预览' : '图片预览'); return `<button class="prompt-media-button" type="button" data-media-url="${escapeHtml(mediaUrl)}" data-media-type="${escapeHtml(mediaType)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开${mediaType === 'video' ? '视频' : '图片'}：${escapeHtml(mediaTitle)}">${mediaType === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl)}"></video><span class="media-open-mark is-play">▶</span>` : `<img class="prompt-image" loading="lazy" src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(mediaTitle)}"><span class="media-open-mark">↗</span>`}</button>`; })()}
-      <div class="prompt-card-foot"><span class="prompt-id">${escapeHtml(String(item.author || 'jack').toLowerCase())} · ${escapeHtml(item.id)}</span><div class="card-actions"><button class="card-action copy-action" data-id="${escapeHtml(item.id)}" type="button">复制文字</button><button class="card-action delete-action" data-id="${escapeHtml(item.id)}" type="button">删除</button></div></div>
-    </article>`).join('');
+    feed.innerHTML = `<div class="feed-grid" id="feedGrid">${visibleItems.map(renderCard).join('')}</div>${renderLazySentinel()}`;
     feed.scrollTop = 0;
-    feed.querySelectorAll('.prompt-video').forEach(normalizeVideoDuration);
+    normalizeRenderedVideos();
+  };
+  const loadMoreItems = () => {
+    if (state.lazyLoading || state.visibleCount >= state.filteredCount) return;
+    const items = getFilteredItems();
+    const start = state.visibleCount;
+    const nextItems = items.slice(start, start + LAZY_BATCH_SIZE);
+    if (!nextItems.length) return;
+    const grid = $('#feedGrid');
+    if (!grid) return;
+    state.lazyLoading = true;
+    $('#lazySentinel')?.remove();
+    grid.insertAdjacentHTML('beforeend', nextItems.map((item, index) => renderCard(item, start + index)).join(''));
+    state.visibleCount += nextItems.length;
+    state.filteredCount = items.length;
+    feed.insertAdjacentHTML('beforeend', renderLazySentinel());
+    normalizeRenderedVideos(grid);
+    state.lazyLoading = false;
+  };
+  const resetLazyFeed = () => {
+    clearTimeout(state.lazyScrollTimer);
+    state.lazyScrollTimer = 0;
+    state.visibleCount = LAZY_BATCH_SIZE;
+    state.filteredCount = 0;
+    state.lazyLoading = false;
+    render();
   };
   const load = async () => {
-    try { const response = await fetch('api.php?action=list', { cache: 'no-store' }); const data = await response.json(); if (!response.ok) throw new Error(data.error); state.items = data.items || []; state.canPublish = Boolean(data.canPublish); renderPasswordGate(); render(); } catch (error) { feed.innerHTML = `<div class="loading-state"><p>暂时取不回备份，请刷新再试。</p></div>`; setNote(error.message, true); }
+    try { const response = await fetch('api.php?action=list', { cache: 'no-store' }); const data = await response.json(); if (!response.ok) throw new Error(data.error); state.items = data.items || []; state.canPublish = Boolean(data.canPublish); state.visibleCount = LAZY_BATCH_SIZE; renderPasswordGate(); render(); } catch (error) { feed.innerHTML = `<div class="loading-state"><p>暂时取不回备份，请刷新再试。</p></div>`; setNote(error.message, true); }
   };
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -691,7 +720,7 @@
     const body = new FormData(); body.append('title', title.value.trim()); body.append('prompt', prompt.value.trim()); body.append('type', state.type); body.append('model', state.selectedModels[state.type]); body.append('password', $('#publishPassword').value); if (state.file) body.append('media', state.file, state.file.name);
     try {
       const response = await fetch('api.php?action=create', { method: 'POST', body }); const data = await response.json(); if (!response.ok) throw new Error(data.error || '保存失败');
-      state.canPublish = true; state.items.unshift(data.item); state.page = 1; form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderPasswordGate(); render(); showToast('已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      state.canPublish = true; state.items.unshift(data.item); state.visibleCount = LAZY_BATCH_SIZE; form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderPasswordGate(); render(); showToast('已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) { setNote(error.message === 'publish_password_required' ? '请输入正确的发布密码。' : error.message === 'publish_password_not_configured' ? '服务器尚未配置发布密码，请先完成运行环境设置。' : error.message === 'upload_too_large' ? '素材压缩后仍超过 1MB，请换一份更短或更小的素材。' : error.message === 'upload_failed' ? '素材上传失败，请换一份再试。' : '保存失败，请稍后再试。', true); }
     finally { state.isPublishing = false; syncPublishButton(); }
   });
@@ -785,10 +814,16 @@
   });
   document.addEventListener('pointerdown', (event) => { if (!event.target.closest('.model-select-shell')) setModelMenu(false); });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { setModelMenu(false); closeMedia(); } });
-  $('#search').addEventListener('input', () => { state.page = 1; render(); });
-  $('#sortButton').addEventListener('click', () => { state.newestFirst = !state.newestFirst; state.page = 1; $('#sortButton').firstChild.textContent = state.newestFirst ? '最新 ' : '最早 '; render(); });
-  $('#prevPage').addEventListener('click', () => { if (state.page > 1) { state.page -= 1; render(); } });
-  $('#nextPage').addEventListener('click', () => { state.page += 1; render(); });
+  $('#search').addEventListener('input', resetLazyFeed);
+  $('#sortButton').addEventListener('click', () => { state.newestFirst = !state.newestFirst; $('#sortButton').firstChild.textContent = state.newestFirst ? '最新 ' : '最早 '; resetLazyFeed(); });
+  feed.addEventListener('scroll', () => {
+    if (state.lazyScrollTimer) return;
+    state.lazyScrollTimer = window.setTimeout(() => {
+      state.lazyScrollTimer = 0;
+      if (feed.scrollTop <= 0) return;
+      if (feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 72) loadMoreItems();
+    }, 40);
+  }, { passive: true });
   feed.addEventListener('click', async (event) => {
     const mediaButton = event.target.closest('.prompt-media-button');
     if (mediaButton) { openMedia(mediaButton); return; }

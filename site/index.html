@@ -11,7 +11,7 @@
   <script>try{if(localStorage.getItem('tishici-theme-v2')!=='light')document.documentElement.classList.add('dark')}catch(e){document.documentElement.classList.add('dark')}</script>
   <script>try{if(matchMedia('(hover:hover) and (pointer:fine)').matches&&!matchMedia('(prefers-reduced-motion:reduce)').matches)document.documentElement.classList.add('custom-pointer-ready')}catch(e){}</script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ff6542'/%3E%3Cpath d='M19 19h26v7H27v7h15v7H27v5h18v7H19z' fill='white'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=20260727-12">
+  <link rel="stylesheet" href="styles.css?v=20260727-13">
 </head>
 <body>
   <div class="particle-field" id="particleField" aria-hidden="true"></div>
@@ -123,11 +123,6 @@
         <div class="empty-state" id="emptyState" hidden>
           <div class="empty-mark">✦</div><h3>这里还很安静</h3><p>写下第一条提示词，它会马上出现在这里。</p><button type="button" class="text-button" id="emptyCta">开始写第一条 ↗</button>
         </div>
-        <div class="archive-pager" id="archivePager" hidden>
-          <button id="prevPage" type="button" aria-label="上一页">‹</button>
-          <span id="pageLabel">1 / 1</span>
-          <button id="nextPage" type="button" aria-label="下一页">›</button>
-        </div>
       </section>
     </section>
   </main>
@@ -160,6 +155,6 @@
     <span class="cursor-ring" id="cursorRing"><i></i></span>
     <span class="cursor-dot" id="cursorDot"><i></i></span>
   </div>
-  <script src="app.js?v=20260727-15"></script>
+  <script src="app.js?v=20260727-16"></script>
 </body>
 </html>
