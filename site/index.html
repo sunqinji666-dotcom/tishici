@@ -11,7 +11,7 @@
   <script>try{if(localStorage.getItem('tishici-theme-v2')!=='light')document.documentElement.classList.add('dark')}catch(e){document.documentElement.classList.add('dark')}</script>
   <script>try{if(matchMedia('(hover:hover) and (pointer:fine)').matches&&!matchMedia('(prefers-reduced-motion:reduce)').matches)document.documentElement.classList.add('custom-pointer-ready')}catch(e){}</script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ff6542'/%3E%3Cpath d='M19 19h26v7H27v7h15v7H27v5h18v7H19z' fill='white'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=20260727-14">
+  <link rel="stylesheet" href="styles.css?v=20260727-17">
 </head>
 <body>
   <div class="particle-field" id="particleField" aria-hidden="true"></div>
@@ -44,9 +44,20 @@
     <section class="workspace">
       <article class="composer-card">
         <div class="card-heading">
-          <div>
+          <div class="card-heading-copy">
             <span class="section-kicker" id="composerKicker">01 / COMPOSE</span>
-            <h2 id="composerTitle">新建备份</h2>
+            <div class="card-heading-title-row">
+              <h2 id="composerTitle">新建备份</h2>
+              <div class="header-auth-slot">
+                <div class="publish-auth-block" id="publishAuthBlock">
+                  <label class="field-label publish-password-label" for="publishPassword"><span class="field-name" id="authLabel">发布身份</span> <span id="passwordHint">jack · 首次发布需密码</span></label>
+                  <div class="publish-auth">
+                    <strong class="admin-chip">jack</strong>
+                    <input id="publishPassword" type="password" form="promptForm" autocomplete="current-password" placeholder="输入发布密码">
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <span class="draft-state" id="draftState">自动保存草稿</span>
         </div>
@@ -73,10 +84,10 @@
 
           <label class="field-label"><span id="mediaLabel">参考图片</span> <span id="mediaHint">可选 · 超过 1MB 自动压缩为 WebP</span></label>
           <label class="dropzone" id="dropzone" for="media">
-            <input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp">
+            <input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v" multiple>
             <span class="upload-icon">↥</span>
-            <span class="drop-title" id="dropTitle">拖一张图到这里，或点击选择</span>
-            <span class="drop-hint" id="dropHint">发布前自动压缩，图片会显示在提示词下方</span>
+            <span class="drop-title" id="dropTitle">拖入图片或视频，或点击多选</span>
+            <span class="drop-hint" id="dropHint">单条最多 12 个素材，超过 1MB 在浏览器本地压缩</span>
           </label>
           <div class="processing-card" id="processingCard" aria-live="polite" hidden>
             <span class="processing-orb" aria-hidden="true"><i></i></span>
@@ -93,16 +104,9 @@
             </div>
           </div>
           <div class="image-preview" id="mediaPreview" hidden>
-            <img id="previewImage" alt="待上传图片预览">
-            <video id="previewVideo" controls playsinline preload="metadata" hidden></video>
-            <div><strong id="fileName"></strong><span id="fileSize"></span></div>
-            <button type="button" class="remove-image" id="removeMedia" aria-label="移除素材">×</button>
-          </div>
-
-          <label class="field-label publish-password-label" for="publishPassword"><span class="field-name" id="authLabel">发布身份</span> <span id="passwordHint">jack · 首次发布需密码</span></label>
-          <div class="publish-auth">
-            <strong class="admin-chip">jack</strong>
-            <input id="publishPassword" type="password" autocomplete="current-password" placeholder="输入发布密码">
+            <div class="draft-media-stack" id="draftMediaStack" aria-hidden="true"></div>
+            <div class="draft-media-summary"><strong id="fileName"></strong><span id="fileSize"></span></div>
+            <button type="button" class="remove-image" id="removeMedia" aria-label="移除全部素材">×</button>
           </div>
           </div>
           <div class="form-dock">
@@ -151,9 +155,14 @@
         <button class="media-modal-close" id="mediaModalClose" type="button" aria-label="关闭素材预览">×</button>
       </header>
       <div class="media-modal-stage">
-        <img id="mediaModalImage" alt="" hidden>
-        <video id="mediaModalVideo" controls playsinline preload="metadata" hidden></video>
+        <button class="media-modal-arrow is-prev" id="mediaModalPrev" type="button" aria-label="上一个素材">‹</button>
+        <div class="media-modal-canvas">
+          <img id="mediaModalImage" alt="" hidden>
+          <video id="mediaModalVideo" controls playsinline preload="metadata" hidden></video>
+        </div>
+        <button class="media-modal-arrow is-next" id="mediaModalNext" type="button" aria-label="下一个素材">›</button>
       </div>
+      <div class="media-filmstrip" id="mediaFilmstrip" role="list" aria-label="素材列表"></div>
     </div>
   </div>
   <div class="toast" id="toast" role="status"></div>
@@ -161,6 +170,6 @@
     <span class="cursor-ring" id="cursorRing"><i></i></span>
     <span class="cursor-dot" id="cursorDot"><i></i></span>
   </div>
-  <script src="app.js?v=20260727-17"></script>
+  <script src="app.js?v=20260727-20"></script>
 </body>
 </html>

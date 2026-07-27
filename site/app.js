@@ -75,7 +75,7 @@
   }
   const form = $('#promptForm'), feed = $('#feed'), empty = $('#emptyState');
   const title = $('#title'), prompt = $('#prompt'), media = $('#media'), dropzone = $('#dropzone');
-  const mediaPreview = $('#mediaPreview'), previewImage = $('#previewImage'), previewVideo = $('#previewVideo'), fileName = $('#fileName'), fileSize = $('#fileSize');
+  const mediaPreview = $('#mediaPreview'), draftMediaStack = $('#draftMediaStack'), fileName = $('#fileName'), fileSize = $('#fileSize');
   const processingCard = $('#processingCard'), processingTitle = $('#processingTitle'), processingPercent = $('#processingPercent'), processingFile = $('#processingFile'), processingProgress = $('#processingProgress'), processingBar = $('#processingBar'), processingDetail = $('#processingDetail');
   const MODELS = {
     image: [
@@ -93,10 +93,11 @@
       { name: 'Hailuo 2.3', meta: '1080P · 6–10s', icon: '◉' },
     ],
   };
-  const state = { items: [], workspaceMode: 'prompt', modeSwitching: false, newestFirst: true, visibleCount: 6, filteredCount: 0, lazyLoading: false, lazyScrollTimer: 0, file: null, mediaKind: null, fileToken: 0, canPublish: false, previewUrl: null, draftTimer: null, originalFileName: '', type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTimer: null, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
+  const state = { items: [], workspaceMode: 'prompt', modeSwitching: false, newestFirst: true, visibleCount: 6, filteredCount: 0, lazyLoading: false, lazyScrollTimer: 0, mediaItems: [], fileToken: 0, canPublish: false, draftTimer: null, type: 'image', selectedModels: { image: '香蕉Pro', video: 'Seedance 2.0 Mini' }, modalTrigger: null, modalTitle: '', modalTimer: null, modalMediaItems: [], modalMediaIndex: 0, processingProgress: 0, isProcessing: false, isPublishing: false, dropReceiptTimer: null };
   const draftKeyFor = (mode) => `tishici-draft-v3-${mode}`;
   const draftIdFor = (mode) => `active-${mode}`;
   const LAZY_BATCH_SIZE = 6;
+  const MAX_MEDIA_ITEMS = 12;
   const MAX_IMAGE_BYTES = 1024 * 1024;
   const MAX_VIDEO_BYTES = 1024 * 1024;
   const draftDb = new Promise((resolve, reject) => {
@@ -134,28 +135,66 @@
     return minutes ? `${minutes}:${String(remainder).padStart(2, '0')}` : `${remainder} 秒`;
   };
   const showToast = (message) => { const toast = $('#toast'); toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2600); };
+  const getItemMediaItems = (item) => {
+    const multiple = Array.isArray(item?.mediaItems) ? item.mediaItems.map((entry) => ({
+      url: entry?.url || entry?.mediaUrl || '',
+      kind: entry?.kind || entry?.mediaType || 'image',
+    })).filter((entry) => entry.url) : [];
+    if (multiple.length) return multiple;
+    const url = item?.mediaUrl || item?.imageUrl || item?.videoUrl || '';
+    return url ? [{ url, kind: item?.mediaType || (item?.videoUrl ? 'video' : 'image') }] : [];
+  };
+  const renderModalMedia = () => {
+    const modalImage = $('#mediaModalImage'), modalVideo = $('#mediaModalVideo');
+    const mediaItems = state.modalMediaItems;
+    const current = mediaItems[state.modalMediaIndex];
+    if (!current) return;
+    const isVideo = current.kind === 'video';
+    modalVideo.pause();
+    modalVideo.removeAttribute('src');
+    modalVideo.load();
+    modalImage.removeAttribute('src');
+    modalImage.hidden = isVideo;
+    modalVideo.hidden = !isVideo;
+    if (isVideo) {
+      modalVideo.src = current.url;
+      normalizeVideoDuration(modalVideo);
+      modalVideo.play().catch(() => {});
+    } else {
+      modalImage.src = current.url;
+      modalImage.alt = `${state.modalTitle || '素材预览'} ${state.modalMediaIndex + 1}`;
+    }
+    $('#mediaModalTitle').textContent = mediaItems.length > 1 ? `${state.modalTitle} · ${state.modalMediaIndex + 1} / ${mediaItems.length}` : state.modalTitle;
+    $('#mediaModalType').textContent = `${isVideo ? 'VIDEO / PLAYBACK' : 'IMAGE / PREVIEW'}${mediaItems.length > 1 ? ` · ${state.modalMediaIndex + 1} / ${mediaItems.length}` : ''}`;
+    $('#mediaModalPrev').hidden = mediaItems.length < 2;
+    $('#mediaModalNext').hidden = mediaItems.length < 2;
+    const filmstrip = $('#mediaFilmstrip');
+    filmstrip.hidden = mediaItems.length < 2;
+    filmstrip.innerHTML = mediaItems.map((entry, index) => `<button class="media-filmstrip-button ${index === state.modalMediaIndex ? 'active' : ''}" type="button" data-media-index="${index}" role="listitem" aria-label="查看第 ${index + 1} 个素材">${entry.kind === 'video' ? `<video muted preload="metadata" playsinline src="${escapeHtml(entry.url)}"></video><span>▶</span>` : `<img loading="lazy" decoding="async" src="${escapeHtml(entry.url)}" alt="">`}</button>`).join('');
+    filmstrip.querySelectorAll('video').forEach(normalizeVideoDuration);
+    filmstrip.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  };
+  const setModalMediaIndex = (index) => {
+    const total = state.modalMediaItems.length;
+    if (!total) return;
+    state.modalMediaIndex = (index + total) % total;
+    renderModalMedia();
+  };
   const openMedia = (trigger) => {
-    const modal = $('#mediaModal'), modalImage = $('#mediaModalImage'), modalVideo = $('#mediaModalVideo');
-    const isVideo = trigger.dataset.mediaType === 'video';
+    const modal = $('#mediaModal');
+    const item = state.items.find((entry) => entry.id === trigger.dataset.mediaId);
+    const mediaItems = item ? getItemMediaItems(item) : trigger.dataset.mediaUrl ? [{ url: trigger.dataset.mediaUrl, kind: trigger.dataset.mediaType || 'image' }] : [];
+    if (!mediaItems.length) return;
     clearTimeout(state.modalTimer);
     state.modalTrigger = trigger;
-    $('#mediaModalTitle').textContent = trigger.dataset.mediaTitle || (isVideo ? '视频预览' : '图片预览');
-    $('#mediaModalType').textContent = isVideo ? 'VIDEO / PLAYBACK' : 'IMAGE / PREVIEW';
-    modalImage.hidden = isVideo; modalVideo.hidden = !isVideo;
-    if (isVideo) {
-      modalImage.removeAttribute('src');
-      modalVideo.src = trigger.dataset.mediaUrl;
-      normalizeVideoDuration(modalVideo);
-    } else {
-      modalVideo.pause(); modalVideo.removeAttribute('src'); modalVideo.load();
-      modalImage.src = trigger.dataset.mediaUrl;
-      modalImage.alt = trigger.dataset.mediaTitle || '提示词参考图片';
-    }
+    state.modalTitle = trigger.dataset.mediaTitle || '素材预览';
+    state.modalMediaItems = mediaItems;
+    state.modalMediaIndex = 0;
     modal.hidden = false;
+    renderModalMedia();
     requestAnimationFrame(() => {
       modal.classList.add('is-open');
       $('#mediaModalClose').focus({ preventScroll: true });
-      if (isVideo) modalVideo.play().catch(() => {});
     });
   };
   const closeMedia = () => {
@@ -170,6 +209,10 @@
       $('#mediaModalImage').removeAttribute('src');
       if (state.modalTrigger?.isConnected) state.modalTrigger.focus({ preventScroll: true });
       state.modalTrigger = null;
+      state.modalTitle = '';
+      state.modalMediaItems = [];
+      state.modalMediaIndex = 0;
+      $('#mediaFilmstrip').innerHTML = '';
     };
     if (reduceMotion.matches) finish();
     else state.modalTimer = setTimeout(finish, 220);
@@ -192,20 +235,12 @@
     picker.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
   };
   const renderMediaInput = () => {
-    if (state.workspaceMode === 'note') {
-      media.accept = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v';
-      $('#mediaLabel').textContent = '图片或视频';
-      $('#mediaHint').textContent = '可选 · 超过 1MB 浏览器本地压缩';
-      $('#dropTitle').textContent = '拖入一张图片或一段视频';
-      $('#dropHint').textContent = '素材会和这条随手记放在一起';
-      return;
-    }
-    const videoMode = state.type === 'video';
-    media.accept = videoMode ? 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v' : 'image/jpeg,image/png,image/webp';
-    $('#mediaLabel').textContent = videoMode ? '参考图片或视频' : '参考图片';
-    $('#mediaHint').textContent = videoMode ? '可选 · 图片或完整视频 · 超过 1MB 浏览器压缩' : '可选 · 超过 1MB 自动压缩为 WebP';
-    $('#dropTitle').textContent = videoMode ? '拖入图片或视频，或点击选择' : '拖一张图到这里，或点击选择';
-    $('#dropHint').textContent = videoMode ? '图片可用于图生视频；视频会保留完整时长' : '发布前自动压缩，图片会显示在提示词下方';
+    const selectedCount = state.mediaItems.length;
+    media.accept = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,.mov,.m4v';
+    $('#mediaLabel').textContent = state.workspaceMode === 'note' ? '图片或视频' : '参考图片或视频';
+    $('#mediaHint').textContent = `可多选 · 单条最多 ${MAX_MEDIA_ITEMS} 个 · 超过 1MB 本地压缩`;
+    $('#dropTitle').textContent = selectedCount ? `继续添加素材 · 已选 ${selectedCount} / ${MAX_MEDIA_ITEMS}` : '拖入图片或视频，或点击多选';
+    $('#dropHint').textContent = state.workspaceMode === 'note' ? '图片和视频会与这条随手记一起保存' : '图片和视频会以层叠素材组显示在提示词下方';
   };
   const renderModelPicker = () => {
     document.querySelectorAll('.type-tab').forEach((tab) => {
@@ -277,9 +312,7 @@
     prompt: prompt.value,
     type: state.type,
     selectedModels: { ...state.selectedModels },
-    media: state.file || null,
-    mediaKind: state.mediaKind || '',
-    fileName: state.originalFileName || state.file?.name || '',
+    mediaItems: state.mediaItems.map((item) => ({ file: item.file, kind: item.kind, originalName: item.originalName || item.file.name })),
   });
   const saveDraftTextFallback = (mode, draft) => {
     try {
@@ -297,7 +330,7 @@
         transaction.onerror = () => reject(transaction.error);
         transaction.onabort = () => reject(transaction.error);
       });
-      if (state.workspaceMode === mode) $('#draftState').textContent = draft.prompt || draft.title || draft.media ? '草稿已保存到本机' : '自动保存草稿';
+      if (state.workspaceMode === mode) $('#draftState').textContent = draft.prompt || draft.title || draft.mediaItems?.length ? '草稿已保存到本机' : '自动保存草稿';
     } catch {
       if (state.workspaceMode === mode) $('#draftState').textContent = '草稿已保存到当前浏览器';
     }
@@ -364,17 +397,56 @@
     state.isProcessing = false;
     syncPublishButton();
   };
-  const showPreview = (file, originalName, note, kind = state.type) => {
+  const renderDraftMediaStack = () => {
+    const total = state.mediaItems.length;
+    renderMediaInput();
+    if (!total) {
+      draftMediaStack.innerHTML = '';
+      draftMediaStack.setAttribute('aria-hidden', 'true');
+      mediaPreview.hidden = true;
+      dropzone.hidden = false;
+      return;
+    }
+    const visible = state.mediaItems.slice(-3);
+    const positions = visible.length === 1 ? ['is-center'] : visible.length === 2 ? ['is-left', 'is-right'] : ['is-left', 'is-right', 'is-center'];
+    draftMediaStack.innerHTML = visible.map((item, index) => {
+      const mediaMarkup = item.kind === 'video'
+        ? `<video muted preload="metadata" playsinline src="${escapeHtml(item.previewUrl)}"></video><i class="stack-play-mark">▶</i>`
+        : `<img src="${escapeHtml(item.previewUrl)}" alt="">`;
+      return `<span class="draft-stack-item ${positions[index]}">${mediaMarkup}</span>`;
+    }).join('') + `<b class="draft-stack-count">${total}</b>`;
+    draftMediaStack.querySelectorAll('video').forEach(normalizeVideoDuration);
+    draftMediaStack.setAttribute('aria-hidden', 'false');
+    const totalBytes = state.mediaItems.reduce((sum, item) => sum + item.file.size, 0);
+    const lastItem = state.mediaItems[total - 1];
+    fileName.textContent = total === 1 ? lastItem.originalName : `已选 ${total} 个素材`;
+    fileSize.textContent = `${formatBytes(totalBytes)} · 图片与视频可混合`;
+    mediaPreview.hidden = false;
+    dropzone.hidden = false;
+  };
+  const appendMediaItem = (file, originalName, kind) => {
+    const item = {
+      file,
+      kind,
+      originalName: originalName || file.name,
+      previewUrl: URL.createObjectURL(file),
+    };
+    state.mediaItems.push(item);
+    renderDraftMediaStack();
+    return item;
+  };
+  const clearMediaItems = () => {
+    state.fileToken += 1;
+    state.mediaItems.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    state.mediaItems = [];
+    media.value = '';
+    draftMediaStack.innerHTML = '';
+    mediaPreview.hidden = true;
     hideProcessing();
-    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-    state.file = file; state.mediaKind = kind; state.originalFileName = originalName || file.name; state.previewUrl = URL.createObjectURL(file);
-    const isVideo = kind === 'video';
-    previewImage.hidden = isVideo; previewVideo.hidden = !isVideo;
-    if (isVideo) { previewVideo.src = state.previewUrl; previewImage.removeAttribute('src'); normalizeVideoDuration(previewVideo); }
-    else { previewImage.src = state.previewUrl; previewVideo.removeAttribute('src'); previewVideo.load(); }
-    fileName.textContent = originalName && originalName !== file.name ? `${originalName} → ${isVideo ? 'WebM' : 'WebP'}` : file.name;
-    fileSize.textContent = `${formatBytes(file.size)}${note ? `（${note}）` : ''}`;
-    mediaPreview.hidden = false; dropzone.hidden = true; setNote(note ? `${note} · 草稿会自动保存在本机。` : `${isVideo ? '视频' : '图片'}草稿已恢复。`);
+    dropzone.hidden = false;
+    renderMediaInput();
   };
   const restoreDraft = async (mode = state.workspaceMode) => {
     let draft = null;
@@ -408,14 +480,27 @@
     }
     renderModelPicker();
     title.value = draft?.title || ''; prompt.value = draft?.prompt || ''; updateCount();
-    if (draft?.media || draft?.image) {
+    const storedItems = Array.isArray(draft?.mediaItems) ? draft.mediaItems : [];
+    for (const storedItem of storedItems.slice(0, MAX_MEDIA_ITEMS)) {
+      const storedMedia = storedItem?.file;
+      if (!(storedMedia instanceof Blob)) continue;
+      const kind = storedItem.kind || (storedMedia.type?.startsWith('video/') ? 'video' : 'image');
+      const fallbackName = kind === 'video' ? 'prompt-video.webm' : 'prompt-image.webp';
+      const originalName = storedItem.originalName || storedMedia.name || fallbackName;
+      const file = storedMedia instanceof File
+        ? storedMedia
+        : new File([storedMedia], originalName, { type: storedMedia.type || (kind === 'video' ? 'video/webm' : 'image/webp'), lastModified: Date.now() });
+      appendMediaItem(file, originalName, kind);
+    }
+    if (!storedItems.length && (draft?.media || draft?.image)) {
       const storedMedia = draft.media || draft.image;
       const kind = draft.mediaKind || (storedMedia.type?.startsWith('video/') ? 'video' : 'image');
       const fallbackName = kind === 'video' ? 'prompt-video.webm' : 'prompt-image.webp';
       const file = storedMedia instanceof File ? storedMedia : new File([storedMedia], draft.fileName || fallbackName, { type: storedMedia.type || (kind === 'video' ? 'video/webm' : 'image/webp'), lastModified: Date.now() });
-      showPreview(file, draft.fileName || file.name, kind === 'video' ? '草稿视频' : '草稿图片', kind);
+      appendMediaItem(file, draft.fileName || file.name, kind);
     }
-    if (title.value || prompt.value || state.file) $('#draftState').textContent = '已恢复本机草稿';
+    renderDraftMediaStack();
+    if (title.value || prompt.value || state.mediaItems.length) $('#draftState').textContent = '已恢复本机草稿';
     else $('#draftState').textContent = '自动保存草稿';
   };
   const blobFromCanvas = (canvas, type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
@@ -691,89 +776,90 @@
     passwordInput.hidden = state.canPublish;
     hint.textContent = state.canPublish ? 'jack · 已验证' : 'jack · 首次发布需密码';
   };
-  const setFile = async (file) => {
-    if (!file) return;
+  const processMediaFile = async (file, token, position, total) => {
     const fileKind = detectMediaKind(file);
     const isVideo = fileKind === 'video';
-    const valid = fileKind && (state.workspaceMode === 'note' || state.type === 'video' || fileKind === 'image');
-    if (!valid) {
-      const message = state.workspaceMode === 'note' || state.type === 'video' ? '请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。' : '请选择 JPG、PNG 或 WEBP 图片。';
-      setNote(message, true);
-      showToast('没有识别到可用的图片或视频');
-      return;
-    }
-    const token = ++state.fileToken;
+    if (!fileKind) return { ok: false, reason: 'unsupported' };
     const kindLabel = isVideo ? '视频' : '图片';
     const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
     state.processingProgress = 0;
-    state.file = null;
-    state.mediaKind = null;
-    state.originalFileName = '';
-    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-    state.previewUrl = null;
-    previewImage.removeAttribute('src');
-    previewVideo.pause(); previewVideo.removeAttribute('src'); previewVideo.load();
-    showProcessing(file, fileKind, 4, `${kindLabel}已接收`, `${formatBytes(file.size)} · 正在检查是否需要压缩`);
-    setNote(`${kindLabel}已经进入浏览器，正在检查素材…`);
-    showToast(`已接收${kindLabel} · ${file.name}`);
+    const sequence = total > 1 ? `第 ${position} / ${total} 个 · ` : '';
+    showProcessing(file, fileKind, 4, `${kindLabel}已接收`, `${sequence}${formatBytes(file.size)} · 正在检查是否需要压缩`);
+    setNote(`${sequence}${kindLabel}已经进入浏览器，正在检查素材…`);
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    if (token !== state.fileToken) return;
+    if (token !== state.fileToken) return { ok: false, reason: 'cancelled' };
     if (file.size <= maxBytes) {
-      showPreview(file, file.name, isVideo ? '视频未超过 1MB，未压缩' : '原图未超过 1MB，未压缩', isVideo ? 'video' : 'image');
-      saveDraft();
-      showToast(`${kindLabel}已接收 · 未超过 1MB，无需压缩`);
-      return;
+      appendMediaItem(file, file.name, fileKind);
+      return { ok: true, compressed: false };
     }
     try {
       const progress = (percent, detail) => {
         if (token !== state.fileToken) return;
-        showProcessing(file, fileKind, percent, `正在压缩${kindLabel}`, detail);
-        setNote(`${kindLabel}正在浏览器本地压缩 · ${Math.round(percent)}%`);
+        showProcessing(file, fileKind, percent, `正在压缩${kindLabel}`, `${sequence}${detail}`);
+        setNote(`${sequence}${kindLabel}正在浏览器本地压缩 · ${Math.round(percent)}%`);
       };
       progress(8, isVideo ? '仅使用当前浏览器处理 · 完整时长会保留' : '仅使用当前浏览器处理 · 正在转换为 WebP');
       const compressed = isVideo ? await compressVideo(file, progress) : await compressImage(file, progress);
-      if (token !== state.fileToken) return;
-      showProcessing(file, fileKind, 99, '压缩完成', '正在生成预览并保存本机草稿…');
-      showPreview(compressed, file.name, `${isVideo ? '已转换为 WebM' : '已转换为 WebP'} · ${formatBytes(compressed.size)}`, isVideo ? 'video' : 'image');
-      saveDraft();
-      showToast(`${kindLabel}压缩完成 · ${formatBytes(compressed.size)}`);
+      if (token !== state.fileToken) return { ok: false, reason: 'cancelled' };
+      showProcessing(file, fileKind, 99, '压缩完成', `${sequence}正在生成预览并保存本机草稿…`);
+      appendMediaItem(compressed, file.name, fileKind);
+      return { ok: true, compressed: true };
     } catch (error) {
-      if (token !== state.fileToken) return;
-      state.file = null; state.mediaKind = null;
+      if (token !== state.fileToken) return { ok: false, reason: 'cancelled' };
       const message = isVideo
         ? (error.message === 'video_compression_unsupported' ? '当前浏览器不支持本地视频压缩，请使用最新版 Chrome 或 Edge。' : '这段视频无法压缩到 1MB，请换一段更短或分辨率更低的视频。')
         : '这张图片无法压缩，请换一张图片再试。';
-      showProcessing(file, fileKind, 100, `${kindLabel}压缩失败`, message, 'error');
-      dropzone.hidden = false;
-      setNote(message, true);
-      showToast(`${kindLabel}压缩失败 · 请换一份素材`);
+      showProcessing(file, fileKind, 100, `${kindLabel}压缩失败`, `${sequence}${message}`, 'error');
+      return { ok: false, reason: 'compression', message };
     }
   };
-  const clearFile = () => {
-    state.fileToken += 1;
-    state.file = null; state.mediaKind = null; state.originalFileName = '';
-    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-    state.previewUrl = null;
+  const setFiles = async (files) => {
+    const incoming = Array.from(files || []).filter(Boolean);
+    if (!incoming.length) return;
+    const supported = incoming.filter((file) => detectMediaKind(file));
+    if (!supported.length) {
+      setNote('请选择 JPG、PNG、WEBP 图片，或 MP4、WebM、MOV 视频。', true);
+      showToast('没有识别到可用的图片或视频');
+      return;
+    }
+    const remaining = Math.max(0, MAX_MEDIA_ITEMS - state.mediaItems.length);
+    if (!remaining) {
+      setNote(`每条最多保存 ${MAX_MEDIA_ITEMS} 个素材，请先移除现有素材。`, true);
+      showToast(`已达到 ${MAX_MEDIA_ITEMS} 个素材上限`);
+      return;
+    }
+    const queue = supported.slice(0, remaining);
+    const skipped = incoming.length - supported.length;
+    const limited = supported.length - queue.length;
+    const token = ++state.fileToken;
     media.value = '';
-    previewImage.removeAttribute('src');
-    previewVideo.pause(); previewVideo.removeAttribute('src'); previewVideo.load();
-    previewImage.hidden = false; previewVideo.hidden = true;
-    mediaPreview.hidden = true;
-    hideProcessing();
-    dropzone.hidden = false;
-  };
-  const importDroppedFile = async (file) => {
-    if (!file) return;
-    const detectedType = detectMediaKind(file);
-    if (state.workspaceMode === 'prompt' && detectedType === 'video' && state.type !== 'video') {
-      if (state.file) clearFile();
-      state.type = 'video';
-      setModelMenu(false);
-      renderModelPicker();
-    }
     closeMedia();
-    await setFile(file);
+    let added = 0;
+    let compressed = 0;
+    let failed = skipped;
+    for (let index = 0; index < queue.length; index += 1) {
+      const result = await processMediaFile(queue[index], token, index + 1, queue.length);
+      if (token !== state.fileToken || result.reason === 'cancelled') return;
+      if (result.ok) {
+        added += 1;
+        if (result.compressed) compressed += 1;
+      } else {
+        failed += 1;
+      }
+    }
+    hideProcessing();
+    renderDraftMediaStack();
+    saveDraft();
+    const details = [
+      added ? `已加入 ${added} 个` : '',
+      compressed ? `${compressed} 个已压缩到 1MB 内` : '',
+      failed ? `${failed} 个未能处理` : '',
+      limited ? `${limited} 个因达到上限未加入` : '',
+    ].filter(Boolean).join(' · ');
+    setNote(`${details || '没有加入素材'}${added ? ' · 草稿已自动保存到本机。' : ''}`, failed > 0 && added === 0);
+    showToast(added ? `素材已进入草稿 · 当前共 ${state.mediaItems.length} 个` : '素材处理失败，请换一份再试');
   };
+  const importDroppedFiles = async (files) => setFiles(files);
   const setNote = (message, error = false) => { const note = $('#formNote'); note.textContent = message; note.classList.toggle('error', error); };
   const getItemWorkspace = (item) => item.collection === 'note' ? 'note' : 'prompt';
   const getWorkspaceItems = () => state.items.filter((item) => getItemWorkspace(item) === state.workspaceMode);
@@ -785,12 +871,23 @@
   };
   const renderCard = (item, index) => {
     const isNote = getItemWorkspace(item) === 'note';
-    const mediaUrl = item.mediaUrl || item.imageUrl || item.videoUrl;
-    const mediaType = item.mediaType || (item.videoUrl ? 'video' : mediaUrl ? 'image' : '');
-    const mediaTitle = item.title || (mediaType === 'video' ? '视频预览' : isNote ? '随手记图片' : '图片预览');
+    const itemMedia = getItemMediaItems(item);
+    const firstMedia = itemMedia[0] || null;
+    const mediaTitle = item.title || (isNote ? '随手记素材' : '提示词素材');
     const badge = isNote ? '随手记' : item.type === 'video' ? '视频' : '图片';
-    const detailBadge = isNote ? (mediaType === 'video' ? '视频' : mediaType === 'image' ? '图片' : '文字') : item.model;
-    const mediaMarkup = !mediaUrl ? '' : `<button class="prompt-media-button" type="button" data-media-url="${escapeHtml(mediaUrl)}" data-media-type="${escapeHtml(mediaType)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开${mediaType === 'video' ? '视频' : '图片'}：${escapeHtml(mediaTitle)}">${mediaType === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl)}"></video><span class="media-open-mark is-play">▶</span>` : `<img class="prompt-image" loading="lazy" decoding="async" src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(mediaTitle)}"><span class="media-open-mark">↗</span>`}</button>`;
+    const mediaKinds = new Set(itemMedia.map((entry) => entry.kind));
+    const noteMediaLabel = !itemMedia.length ? '文字' : itemMedia.length > 1 ? `${itemMedia.length} 项素材` : firstMedia.kind === 'video' ? '视频' : '图片';
+    const detailBadge = isNote ? noteMediaLabel : item.model;
+    let mediaMarkup = '';
+    if (itemMedia.length === 1) {
+      mediaMarkup = `<button class="prompt-media-button" type="button" data-media-id="${escapeHtml(item.id)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开${firstMedia.kind === 'video' ? '视频' : '图片'}：${escapeHtml(mediaTitle)}">${firstMedia.kind === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(firstMedia.url)}"></video><span class="media-open-mark is-play">▶</span>` : `<img class="prompt-image" loading="lazy" decoding="async" src="${escapeHtml(firstMedia.url)}" alt="${escapeHtml(mediaTitle)}"><span class="media-open-mark">↗</span>`}</button>`;
+    } else if (itemMedia.length > 1) {
+      const visible = itemMedia.slice(-3);
+      const positions = visible.length === 2 ? ['is-left', 'is-right'] : ['is-left', 'is-right', 'is-center'];
+      const stackedItems = visible.map((entry, mediaIndex) => `<span class="published-stack-item ${positions[mediaIndex]}">${entry.kind === 'video' ? `<video class="prompt-video" muted preload="metadata" playsinline src="${escapeHtml(entry.url)}"></video><i class="stack-play-mark">▶</i>` : `<img class="prompt-image" loading="lazy" decoding="async" src="${escapeHtml(entry.url)}" alt="">`}</span>`).join('');
+      const mixedLabel = mediaKinds.size > 1 ? '图片 + 视频' : firstMedia.kind === 'video' ? '视频组' : '图片组';
+      mediaMarkup = `<button class="prompt-media-button is-stack" type="button" data-media-id="${escapeHtml(item.id)}" data-media-title="${escapeHtml(mediaTitle)}" aria-label="打开 ${itemMedia.length} 个${mixedLabel}">${stackedItems}<span class="published-stack-count">${itemMedia.length}</span><span class="published-stack-label">${mixedLabel}</span></button>`;
+    }
     return `<article class="prompt-card ${isNote ? 'is-note' : ''}" style="animation-delay:${Math.min((index % LAZY_BATCH_SIZE) * 45, 220)}ms">
       <div class="prompt-badges"><span>${badge}</span>${detailBadge ? `<b>${escapeHtml(detailBadge)}</b>` : ''}</div>
       <div class="prompt-card-head"><h3 class="prompt-card-title ${item.title ? '' : 'untitled'}">${escapeHtml(item.title || (isNote ? '没写标题' : '未命名提示词'))}</h3><time class="prompt-date">${formatDate(item.createdAt)}</time></div>
@@ -846,7 +943,7 @@
     syncPublishButton();
     clearTimeout(state.draftTimer);
     await persistDraft(state.workspaceMode, snapshotDraft());
-    clearFile();
+    clearMediaItems();
     form.reset();
     title.value = '';
     prompt.value = '';
@@ -873,18 +970,25 @@
     if (state.isProcessing) return setNote(`素材仍在浏览器本地压缩，请等进度完成后再${state.workspaceMode === 'note' ? '保存' : '发布'}。`, true);
     if (!prompt.value.trim()) return setNote(state.workspaceMode === 'note' ? '先写下一点内容，再记下来。' : '先写下一段提示词，再发布。', true);
     state.isPublishing = true; syncPublishButton(); setNote('');
-    const body = new FormData(); body.append('collection', state.workspaceMode); body.append('title', title.value.trim()); body.append('prompt', prompt.value.trim()); body.append('type', state.workspaceMode === 'note' ? (state.mediaKind || 'text') : state.type); body.append('model', state.workspaceMode === 'note' ? '' : state.selectedModels[state.type]); body.append('password', $('#publishPassword').value); if (state.file) body.append('media', state.file, state.file.name);
+    const body = new FormData();
+    body.append('collection', state.workspaceMode);
+    body.append('title', title.value.trim());
+    body.append('prompt', prompt.value.trim());
+    body.append('type', state.workspaceMode === 'note' ? (state.mediaItems[0]?.kind || 'text') : state.type);
+    body.append('model', state.workspaceMode === 'note' ? '' : state.selectedModels[state.type]);
+    body.append('password', $('#publishPassword').value);
+    state.mediaItems.forEach((item) => body.append('media[]', item.file, item.file.name));
     try {
       const response = await fetch('api.php?action=create', { method: 'POST', body }); const data = await response.json(); if (!response.ok) throw new Error(data.error || '保存失败');
-      state.canPublish = true; state.items.unshift(data.item); state.visibleCount = LAZY_BATCH_SIZE; form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderWorkspaceMode(); renderPasswordGate(); render(); showToast(state.workspaceMode === 'note' ? '记好了，就在右边' : '已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      state.canPublish = true; state.items.unshift(data.item); state.visibleCount = LAZY_BATCH_SIZE; form.reset(); clearMediaItems(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; renderWorkspaceMode(); renderPasswordGate(); render(); showToast(state.workspaceMode === 'note' ? '记好了，就在右边' : '已发布，备份就在这里'); document.querySelector('.feed-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) { setNote(error.message === 'publish_password_required' ? '请输入正确的发布密码。' : error.message === 'publish_password_not_configured' ? '服务器尚未配置发布密码，请先完成运行环境设置。' : error.message === 'upload_too_large' ? '素材压缩后仍超过 1MB，请换一份更短或更小的素材。' : error.message === 'upload_failed' ? '素材上传失败，请换一份再试。' : '保存失败，请稍后再试。', true); }
     finally { state.isPublishing = false; syncPublishButton(); }
   });
-  $('#clearButton').addEventListener('click', async () => { form.reset(); clearFile(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; setNote(''); });
+  $('#clearButton').addEventListener('click', async () => { form.reset(); clearMediaItems(); await clearDraft(); updateCount(); $('#draftState').textContent = '自动保存草稿'; setNote(''); });
   $('#emptyCta').addEventListener('click', () => { title.focus(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
   prompt.addEventListener('input', () => { updateCount(); saveDraft(); }); title.addEventListener('input', saveDraft);
-  media.addEventListener('change', () => setFile(media.files[0]));
-  $('#removeMedia').addEventListener('click', () => { clearFile(); saveDraft(); });
+  media.addEventListener('change', () => setFiles(media.files));
+  $('#removeMedia').addEventListener('click', () => { clearMediaItems(); saveDraft(); setNote('已移除全部素材，文字草稿仍保留。'); });
   ['dragenter','dragover'].forEach((event) => dropzone.addEventListener(event, (e) => { e.preventDefault(); dropzone.classList.add('is-dragging'); }));
   ['dragleave','drop'].forEach((event) => dropzone.addEventListener(event, (e) => { e.preventDefault(); dropzone.classList.remove('is-dragging'); }));
   const globalDropOverlay = $('#globalDropOverlay');
@@ -903,15 +1007,16 @@
     if (types.includes('files')) return true;
     return Array.from(transfer.items || []).some((item) => String(item.kind).toLowerCase() === 'file');
   };
-  const getFirstDraggedFile = (transfer) => {
-    const directFile = transfer?.files?.[0];
-    if (directFile) return directFile;
+  const getDraggedFiles = (transfer) => {
+    const directFiles = Array.from(transfer?.files || []);
+    if (directFiles.length) return directFiles;
+    const files = [];
     for (const item of Array.from(transfer?.items || [])) {
       if (String(item.kind).toLowerCase() !== 'file') continue;
       const file = item.getAsFile?.();
-      if (file) return file;
+      if (file) files.push(file);
     }
-    return null;
+    return files;
   };
   const updateGlobalDropCopy = (event) => {
     const mime = event.dataTransfer?.items?.[0]?.type || '';
@@ -919,13 +1024,14 @@
     $('#globalDropTitle').textContent = `松手，${kind}自动进入草稿`;
     $('#globalDropHint').textContent = `${kind === '素材' ? '图片或视频' : kind} · 自动识别 · 浏览器本地压缩`;
   };
-  const showGlobalDropReceipt = (file) => {
+  const showGlobalDropReceipt = (files) => {
     clearTimeout(state.dropReceiptTimer);
     globalDragDepth = 0;
-    const kind = detectMediaKind(file);
-    const kindLabel = kind === 'video' ? '视频' : kind === 'image' ? '图片' : '素材';
+    const firstFile = files[0];
+    const kind = detectMediaKind(firstFile);
+    const kindLabel = files.length > 1 ? `${files.length} 个素材` : kind === 'video' ? '视频' : kind === 'image' ? '图片' : '素材';
     $('#globalDropTitle').textContent = `已接收${kindLabel}`;
-    $('#globalDropHint').textContent = `${file.name || '未命名素材'} · ${file.size > 1024 * 1024 ? '准备在浏览器本地压缩' : '无需压缩，正在生成预览'}`;
+    $('#globalDropHint').textContent = files.length > 1 ? '正在逐个检查并保存到本机草稿' : `${firstFile.name || '未命名素材'} · ${firstFile.size > 1024 * 1024 ? '准备在浏览器本地压缩' : '无需压缩，正在生成预览'}`;
     globalDropOverlay.classList.add('is-visible', 'is-received');
     state.dropReceiptTimer = window.setTimeout(resetGlobalDrop, 900);
   };
@@ -950,10 +1056,10 @@
   document.addEventListener('drop', (event) => {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
-    const file = getFirstDraggedFile(event.dataTransfer);
-    if (!file) { resetGlobalDrop(); return; }
-    showGlobalDropReceipt(file);
-    importDroppedFile(file);
+    const files = getDraggedFiles(event.dataTransfer);
+    if (!files.length) { resetGlobalDrop(); return; }
+    showGlobalDropReceipt(files);
+    importDroppedFiles(files);
   });
   document.addEventListener('dragend', resetGlobalDrop);
   window.addEventListener('blur', resetGlobalDrop);
@@ -964,7 +1070,6 @@
   $('#typeTabs').addEventListener('click', (event) => {
     if (state.workspaceMode !== 'prompt') return;
     const tab = event.target.closest('.type-tab'); if (!tab || !MODELS[tab.dataset.type]) return;
-    if (state.file && state.mediaKind === 'video' && tab.dataset.type === 'image') clearFile();
     state.type = tab.dataset.type; setModelMenu(false); renderModelPicker(); saveDraft();
   });
   $('#modelTrigger').addEventListener('click', () => setModelMenu($('#modelTrigger').getAttribute('aria-expanded') !== 'true'));
@@ -974,7 +1079,12 @@
     state.selectedModels[state.type] = option.dataset.model; setModelMenu(false); renderModelPicker(); saveDraft();
   });
   document.addEventListener('pointerdown', (event) => { if (!event.target.closest('.model-select-shell')) setModelMenu(false); });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { setModelMenu(false); closeMedia(); } });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { setModelMenu(false); closeMedia(); return; }
+    if ($('#mediaModal').hidden || state.modalMediaItems.length < 2) return;
+    if (event.key === 'ArrowLeft') { event.preventDefault(); setModalMediaIndex(state.modalMediaIndex - 1); }
+    if (event.key === 'ArrowRight') { event.preventDefault(); setModalMediaIndex(state.modalMediaIndex + 1); }
+  });
   $('#search').addEventListener('input', resetLazyFeed);
   $('#sortButton').addEventListener('click', () => { state.newestFirst = !state.newestFirst; $('#sortButton').firstChild.textContent = state.newestFirst ? '最新 ' : '最早 '; resetLazyFeed(); });
   feed.addEventListener('scroll', () => {
@@ -997,6 +1107,12 @@
   });
   $('#mediaModalClose').addEventListener('click', closeMedia);
   $('#mediaModal').addEventListener('pointerdown', (event) => { if (event.target === event.currentTarget) closeMedia(); });
+  $('#mediaModalPrev').addEventListener('click', () => setModalMediaIndex(state.modalMediaIndex - 1));
+  $('#mediaModalNext').addEventListener('click', () => setModalMediaIndex(state.modalMediaIndex + 1));
+  $('#mediaFilmstrip').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-media-index]');
+    if (button) setModalMediaIndex(Number(button.dataset.mediaIndex));
+  });
   $('#themeToggle').addEventListener('click', () => { document.documentElement.classList.toggle('dark'); localStorage.setItem('tishici-theme-v2', document.documentElement.classList.contains('dark') ? 'dark' : 'light'); });
   if (localStorage.getItem('tishici-theme-v2') !== 'light') document.documentElement.classList.add('dark');
   renderWorkspaceMode(); renderPasswordGate(); renderModelPicker(); restoreDraft(state.workspaceMode).then(load);

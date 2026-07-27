@@ -8,7 +8,7 @@ A personal prompt and pocket-note archive that is ready as soon as the browser o
 
 | Project status | Current value |
 |---|---|
-| Stable version | `v0.1.0` |
+| Stable version | `v0.2.0` |
 | Runtime | PHP 8.1+ and a modern Chromium browser |
 | License | No license provided |
 | Last verified | 2026-07-27 |
@@ -17,7 +17,7 @@ A personal prompt and pocket-note archive that is ready as soon as the browser o
 
 ## What it is
 
-tishici is a small self-hosted archive for personal creative notes. Prompt mode keeps the generation model, title, prompt, and one image or video preview together on a card. Pocket Notes provides a separate composer and feed for quick thoughts, tasks, images, or videos.
+tishici is a small self-hosted archive for personal creative notes. Prompt mode keeps the generation model, title, prompt, and up to 12 image/video attachments together on a card. Pocket Notes provides a separate composer and feed for quick thoughts, tasks, images, or videos.
 
 The interface opens in a photographer-inspired dark mode and always defaults to prompts. The feed renders six cards initially and lazy-loads more while scrolling, with search, sorting, copy, delete, and an in-page translucent media viewer.
 
@@ -28,8 +28,8 @@ The interface opens in a photographer-inspired dark mode and always defaults to 
 - **Keep drafts local:** typing or selecting media automatically stores the draft in IndexedDB, with a text fallback in localStorage. A successful publish removes the draft.
 - **Keep modes separate:** prompts and pocket notes have independent local drafts and feeds, so switching never overwrites either draft.
 - **Compress in the browser:** files at or below 1 MiB remain unchanged. Larger files are converted locally; the server only validates type and size.
-- **Separate image and video work:** each type has its own model picker, while full-window drop automatically detects the incoming media type.
-- **Scan quickly:** prompts, models, and media stay together. The feed starts with six cards and loads the next batch as you scroll.
+- **Mix images and videos:** image/video model pickers remain independent, while either prompt type and Pocket Notes can accept several images and videos in one selection or drop.
+- **Scan quickly:** media groups appear as a three-layer contact-sheet stack. Open one to navigate with arrows, keyboard keys, or the bottom filmstrip. The feed starts with six cards and loads the next batch as you scroll.
 
 ## Quick start
 
@@ -77,6 +77,7 @@ Images are converted to WebP. Videos become playable WebM visual previews below 
 |---|---|
 | Image input | JPG, PNG, WebP |
 | Video input | MP4, WebM, MOV |
+| Media per item | Up to 12 mixed images and videos |
 | Compression threshold | Starts only when the file is strictly larger than 1 MiB |
 | Server limit | Result must be no larger than 1 MiB; no server-side transcoding |
 | Drafts | IndexedDB with localStorage text fallback |
@@ -134,13 +135,13 @@ The first image on this page is a real 1600×800 capture of this build. All card
 
 ## Version and downloads
 
-The current version is `v0.1.0`. Download `tishici-v0.1.0-web-source.zip` from [GitHub Releases](https://github.com/sunqinji666-dotcom/tishici/releases/latest), then verify it with the matching `.sha256` file:
+The current version is `v0.2.0`. Download `tishici-v0.2.0-web-source.zip` from [GitHub Releases](https://github.com/sunqinji666-dotcom/tishici/releases/latest), then verify it with the matching `.sha256` file:
 
 ```bash
-shasum -a 256 -c tishici-v0.1.0-web-source.zip.sha256
+shasum -a 256 -c tishici-v0.2.0-web-source.zip.sha256
 ```
 
-See [CHANGELOG.md](../CHANGELOG.md) and the full [v0.1.0 release notes](RELEASE_NOTES_v0.1.0.md).
+See [CHANGELOG.md](../CHANGELOG.md) and the full [v0.2.0 release notes](RELEASE_NOTES_v0.2.0.md).
 
 ## FAQ
 
